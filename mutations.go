@@ -309,7 +309,7 @@ func (mdb *MutationsDB) Dir() string {
 func (mdb *MutationsDB) Datasets(assembly string, isAdmin bool, permissions []string) ([]*Dataset, error) {
 	namedArgs := []any{sql.Named("assembly", assembly)}
 
-	query := sqlite.MakePermissionsSql(DatasetsSql, permissions, isAdmin, &namedArgs)
+	query := sqlite.MakePermissionsSql(DatasetsSql, isAdmin, permissions, &namedArgs)
 
 	rows, err := mdb.db.Query(query, namedArgs...)
 
@@ -434,7 +434,7 @@ func (mdb *MutationsDB) Search(assembly string, location *dna.Location, datasetI
 		sql.Named("start", location.Start()),
 		sql.Named("end", location.End())}
 
-	query := sqlite.MakePermissionsSql(FindMutationsSql, permissions, isAdmin, &namedArgs)
+	query := sqlite.MakePermissionsSql(FindMutationsSql, isAdmin, permissions, &namedArgs)
 
 	query = MakeInDatasetsSql(query, datasetIds, &namedArgs)
 
