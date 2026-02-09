@@ -42,7 +42,7 @@ type (
 
 	Sample struct {
 		//Metadata      map[string]string `json:"metadata,omitempty"`
-		Id              string `json:"id"`
+		PublicId        string `json:"id"`
 		Name            string `json:"name"`
 		Dataset         string `json:"dataset"`
 		COO             string `json:"coo,omitempty"`
@@ -52,7 +52,7 @@ type (
 	}
 
 	Dataset struct {
-		Id          string    `json:"id"`
+		PublicId    string    `json:"id"`
 		Genome      string    `json:"genome"`
 		Assembly    string    `json:"assembly"`
 		Institution string    `json:"institution,omitempty"`
@@ -106,7 +106,7 @@ type (
 
 const (
 	DatasetsSql = `SELECT DISTINCT
-		d.uuid AS dataset_id,
+		d.public_id AS dataset_id,
 		d.genome,
 		d.assembly,
 		d.institution,
@@ -114,7 +114,7 @@ const (
 		d.short_name,
 		d.mutations,
 		d.description,
-		s.uuid AS sample_id,
+		s.public_id AS sample_id,
 		s.name AS sample_name,
 		s.coo,
 		s.lymphgen_class,
@@ -131,7 +131,7 @@ const (
 			s.name`
 
 	// DatasetSql = `SELECT
-	// 	d.uuid AS dataset_id,
+	// 	d.public_id AS dataset_id,
 	// 	d.genome,
 	// 	d.assembly,
 	// 	d.name,
@@ -179,8 +179,8 @@ const (
 	// 	ORDER BY md.name`
 
 	FindMutationsSql = `SELECT
-		d.uuid AS dataset_id,
-		s.uuid AS sample_id,
+		d.public_id AS dataset_id,
+		s.public_id AS sample_id,
 		c.name, 
 		m.start, 
 		m.end, 
@@ -200,7 +200,7 @@ const (
 			<<PERMISSIONS>>
 			AND <<DATASETS>>
 			AND c.name = :chr AND m.start >= :start AND  m.end <= :end
-		ORDER BY d.uuid, c.name, m.start, m.end, m.variant_type`
+		ORDER BY d.public_id, c.name, m.start, m.end, m.variant_type`
 )
 
 func MakeInDatasetsSql(query string, datasetIds []string, namedArgs *[]any) string {
@@ -212,7 +212,7 @@ func MakeInDatasetsSql(query string, datasetIds []string, namedArgs *[]any) stri
 		*namedArgs = append(*namedArgs, sql.Named(ph, datasetId))
 	}
 
-	return strings.Replace(query, "<<DATASETS>>", "d.uuid IN ("+strings.Join(inPlaceholders, ",")+")", 1)
+	return strings.Replace(query, "<<DATASETS>>", "d.public_id IN ("+strings.Join(inPlaceholders, ",")+")", 1)
 }
 
 func (mutation *Mutation) Clone() *Mutation {
@@ -328,7 +328,7 @@ func (mdb *MutationsDB) Datasets(assembly string, isAdmin bool, permissions []st
 		var dataset Dataset
 		var sample Sample
 
-		err := rows.Scan(&dataset.Id,
+		err := rows.Scan(&dataset.PublicId,
 			&dataset.Genome,
 			&dataset.Assembly,
 			&dataset.Institution,
@@ -336,7 +336,7 @@ func (mdb *MutationsDB) Datasets(assembly string, isAdmin bool, permissions []st
 			&dataset.ShortName,
 			&dataset.Mutations,
 			&dataset.Description,
-			&sample.Id,
+			&sample.PublicId,
 			&sample.Name,
 			&sample.COO,
 			&sample.LymphgenClass,
@@ -347,15 +347,15 @@ func (mdb *MutationsDB) Datasets(assembly string, isAdmin bool, permissions []st
 			return nil, err //fmt.Errorf("there was an error with the database records")
 		}
 
-		if currentDataset == nil || currentDataset.Id != dataset.Id {
+		if currentDataset == nil || currentDataset.PublicId != dataset.PublicId {
 			// if a new dataset, add to the list
 			currentDataset = &dataset
 			currentDataset.Samples = make([]*Sample, 0, 100)
 			ret = append(ret, currentDataset)
 		}
 
-		if currentSample == nil || currentSample.Id != sample.Id {
-			sample.Dataset = dataset.Id
+		if currentSample == nil || currentSample.PublicId != sample.PublicId {
+			sample.Dataset = dataset.PublicId
 
 			// new sample, init metadata map
 			//sample.Metadata = make(map[string]string)

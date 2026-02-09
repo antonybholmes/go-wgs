@@ -83,7 +83,7 @@ file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/
 df_samples = pd.read_csv(file, sep="\t", header=0, keep_default_na=False)
 datasets = list(sorted(df_samples["Dataset"].unique()))
 sample_map = {
-    sample: {"index": i + 1, "uuid": uuid7()}
+    sample: {"index": i + 1, "public_id": uuid7()}
     for i, sample in enumerate(df_samples["Sample"].values)
 }
 
@@ -93,7 +93,11 @@ for i, dataset in enumerate(datasets):
     df_ds = df_samples[df_samples["Dataset"] == dataset]
     institution = list(df_ds["Institution"].unique())[0]
 
-    dataset_map[dataset] = {"index": i + 1, "uuid": uuid7(), "institution": institution}
+    dataset_map[dataset] = {
+        "index": i + 1,
+        "public_id": uuid7(),
+        "institution": institution,
+    }
 
 # sampleIdMap = {sample: i for i, sample in enumerate(df_samples["Sample"].values)}
 
@@ -137,7 +141,7 @@ cursor.execute("BEGIN TRANSACTION;")
 cursor.execute(
     f"""CREATE TABLE metadata (
     id INTEGER PRIMARY KEY,
-    uuid TEXT NOT NULL UNIQUE,
+    public_id TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     version TEXT NOT NULL DEFAULT ""
     );
@@ -145,13 +149,13 @@ cursor.execute(
 )
 
 cursor.execute(
-    f"""INSERT INTO metadata (id, uuid, name, version) VALUES (1, '{uuid7()}', 'mutations', '1.0.0');"""
+    f"""INSERT INTO metadata (id, public_id, name, version) VALUES (1, '{uuid7()}', 'mutations', '1.0.0');"""
 )
 
 cursor.execute(
     f"""CREATE TABLE chromosomes (
     id INTEGER PRIMARY KEY,
-    uuid TEXT NOT NULL UNIQUE,
+    public_id TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL
     );
 """
@@ -160,26 +164,26 @@ cursor.execute(
 for chr in chrs:
     uuid = uuid7()
     cursor.execute(
-        f"INSERT INTO chromosomes (id, uuid, name) VALUES ({chr_map[chr]}, '{uuid}', '{chr}');"
+        f"INSERT INTO chromosomes (id, public_id, name) VALUES ({chr_map[chr]}, '{uuid}', '{chr}');"
     )
 
 cursor.execute(
     f"""CREATE TABLE permissions (
     id INTEGER PRIMARY KEY,
-    uuid TEXT NOT NULL UNIQUE,
+    public_id TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL
     );
 """
 )
 
 cursor.execute(
-    f"INSERT INTO permissions (id, uuid, name) VALUES (1, '{rdf_view_id}', 'rdf:view');",
+    f"INSERT INTO permissions (id, public_id, name) VALUES (1, '{rdf_view_id}', 'rdf:view');",
 )
 
 cursor.execute(
     f"""CREATE TABLE datasets (
     id INTEGER PRIMARY KEY,
-    uuid TEXT NOT NULL UNIQUE,
+    public_id TEXT NOT NULL UNIQUE,
     genome TEXT NOT NULL,
     assembly TEXT NOT NULL,
     institution TEXT NOT NULL DEFAULT "",
@@ -202,20 +206,11 @@ cursor.execute(
 """
 )
 
-cursor.execute(
-    f""" CREATE TABLE metadata (
-    id INTEGER PRIMARY KEY,
-    uuid TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
-    short_name TEXT NOT NULL
-    );
-    """
-)
 
 cursor.execute(
     f""" CREATE TABLE samples (
     id INTEGER PRIMARY KEY,
-    uuid TEXT NOT NULL UNIQUE,
+    public_id TEXT NOT NULL UNIQUE,
     dataset_id INTEGER NOT NULL,
     name TEXT NOT NULL,
     coo TEXT NOT NULL DEFAULT "",
@@ -264,7 +259,7 @@ cursor.execute(
 # for meta in metadata:
 #     uuid = uuid7()
 #     cursor.execute(
-#         f"INSERT INTO metadata (id, uuid, name, short_name) VALUES ({metadata_map[meta]}, '{uuid}', '{meta}', '{metadata_json_map[meta]["camelCase"]}');",
+#         f"INSERT INTO metadata (id, public_id, name, short_name) VALUES ({metadata_map[meta]}, '{public_id}', '{meta}', '{metadata_json_map[meta]["camelCase"]}');",
 #     )
 
 cursor.execute("COMMIT;")
@@ -279,7 +274,7 @@ df = pd.read_csv(file, sep="\t", header=0, keep_default_na=False)
 
 for di, dataset in enumerate(datasets):
     dataset_index = dataset_map[dataset]["index"]
-    dataset_id = dataset_map[dataset]["uuid"]
+    dataset_id = dataset_map[dataset]["public_id"]
     institution = dataset_map[dataset]["institution"]
 
     shortName = idMap[dataset]
@@ -296,7 +291,7 @@ for di, dataset in enumerate(datasets):
     cursor.execute("BEGIN TRANSACTION;")
 
     cursor.execute(
-        f"INSERT INTO datasets (id, uuid,  genome, assembly, institution, name, short_name, mutations) VALUES ({dataset_index}, '{dataset_id}', '{genome}', '{assembly}', '{institution}', '{name}', '{shortName}', {mutation_counts});",
+        f"INSERT INTO datasets (id, public_id,  genome, assembly, institution, name, short_name, mutations) VALUES ({dataset_index}, '{dataset_id}', '{genome}', '{assembly}', '{institution}', '{name}', '{shortName}', {mutation_counts});",
     )
 
     cursor.execute(
@@ -310,7 +305,7 @@ for di, dataset in enumerate(datasets):
     for i in range(df_samples_d.shape[0]):
         sample = df_samples_d["Sample"].values[i]
         sample_index = sample_map[sample]["index"]
-        sample_id = sample_map[sample]["uuid"]
+        sample_id = sample_map[sample]["public_id"]
 
         coo = df_samples_d["COO"].values[i]
 
@@ -323,7 +318,7 @@ for di, dataset in enumerate(datasets):
         sample_type = df_samples_d["Sample type"].values[i]
 
         cursor.execute(
-            f"INSERT INTO samples (id, uuid, dataset_id, name, coo, lymphgen_class, paired_normal_dna, type) VALUES ({sample_index}, '{sample_id}', {dataset_index}, '{sample}', '{coo}', '{lymphgen}', '{paired}', '{sample_type}') ON CONFLICT DO NOTHING;",
+            f"INSERT INTO samples (id, public_id, dataset_id, name, coo, lymphgen_class, paired_normal_dna, type) VALUES ({sample_index}, '{sample_id}', {dataset_index}, '{sample}', '{coo}', '{lymphgen}', '{paired}', '{sample_type}') ON CONFLICT DO NOTHING;",
         )
 
         # for meta in metadata:
