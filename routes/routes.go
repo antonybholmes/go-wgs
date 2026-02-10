@@ -45,7 +45,7 @@ func ParseParamsFromPost(c *gin.Context) (*MutationParams, error) {
 
 func MutationDatasetsRoute(c *gin.Context) {
 	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *auth.AuthUserJwtClaims) {
-		assembly := c.Param("assembly")
+		assembly := c.Query("assembly")
 
 		datasets, err := mutationdb.Datasets(assembly, isAdmin, user.Permissions)
 
@@ -60,7 +60,7 @@ func MutationDatasetsRoute(c *gin.Context) {
 
 func MutationsRoute(c *gin.Context) {
 	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *auth.AuthUserJwtClaims) {
-		assembly := c.Param("assembly")
+		assembly := c.Query("assembly")
 
 		params, err := ParseParamsFromPost(c)
 
@@ -203,7 +203,7 @@ type PileupResp struct {
 func PileupRoute(c *gin.Context) {
 	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *auth.AuthUserJwtClaims) {
 
-		assembly := c.Param("assembly")
+		assembly := c.Query("assembly")
 
 		params, err := ParseParamsFromPost(c)
 
@@ -218,7 +218,7 @@ func PileupRoute(c *gin.Context) {
 
 		log.Debug().Msgf("pileup location: %v", location)
 
-		//assembly := c.Param("assembly")
+		//assembly := c.Query("assembly")
 		//name := c.Param("name")
 
 		// ret := PileupResp{Location: location,

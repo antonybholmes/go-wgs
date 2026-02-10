@@ -11,6 +11,7 @@ import (
 
 	"github.com/antonybholmes/go-dna"
 	"github.com/antonybholmes/go-sys"
+	"github.com/antonybholmes/go-web"
 	"github.com/antonybholmes/go-web/auth/sqlite"
 	"github.com/rs/zerolog/log"
 )
@@ -125,7 +126,7 @@ const (
 		JOIN samples s ON s.dataset_id = d.id
 		WHERE 
 			<<PERMISSIONS>>
-			AND d.assembly = :assembly
+			AND LOWER(d.assembly) = :assembly
 		ORDER BY
 			d.name, 
 			s.name`
@@ -157,7 +158,7 @@ const (
 		JOIN permissions p ON dp.permission_id = p.id
 		WHERE 
 			<<PERMISSIONS>>
-			AND d.assembly = :assembly`
+			AND LOWER(d.assembly) = :assembly`
 
 	AllSamplesSql = BaseSearchSamplesSql +
 		` ORDER BY
@@ -307,7 +308,7 @@ func (mdb *MutationsDB) Dir() string {
 }
 
 func (mdb *MutationsDB) Datasets(assembly string, isAdmin bool, permissions []string) ([]*Dataset, error) {
-	namedArgs := []any{sql.Named("assembly", assembly)}
+	namedArgs := []any{sql.Named("assembly", web.FormatParam(assembly))}
 
 	query := sqlite.MakePermissionsSql(DatasetsSql, isAdmin, permissions, &namedArgs)
 
@@ -426,7 +427,11 @@ func (mdb *MutationsDB) Datasets(assembly string, isAdmin bool, permissions []st
 
 // }
 
-func (mdb *MutationsDB) Search(assembly string, location *dna.Location, datasetIds []string, isAdmin bool, permissions []string) (*SearchResults, error) {
+func (mdb *MutationsDB) Search(assembly string,
+	location *dna.Location,
+	datasetIds []string,
+	isAdmin bool,
+	permissions []string) (*SearchResults, error) {
 	results := SearchResults{Location: location, DatasetResults: make([]*DatasetResults, 0, len(datasetIds))}
 
 	namedArgs := []any{
@@ -757,36 +762,36 @@ func addToPileupMap(start int, mutation *Mutation, pileupMap *map[int]map[string
 	(*pileupMap)[start][mutation.Type][mutation.Tum] = append((*pileupMap)[start][mutation.Type][mutation.Tum], mutation)
 }
 
-func rowsToMutations(rows *sql.Rows) ([]*Mutation, error) {
+// func rowsToMutations(rows *sql.Rows) ([]*Mutation, error) {
 
-	mutations := make([]*Mutation, 0, 100)
+// 	mutations := make([]*Mutation, 0, 100)
 
-	defer rows.Close()
+// 	defer rows.Close()
 
-	for rows.Next() {
-		var mutation Mutation
+// 	for rows.Next() {
+// 		var mutation Mutation
 
-		err := rows.Scan(
-			&mutation.Sample,
-			&mutation.Chr,
-			&mutation.Start,
-			&mutation.End,
-			&mutation.Ref,
-			&mutation.Tum,
-			&mutation.Alt,
-			&mutation.Depth,
-			&mutation.Type,
-			&mutation.Vaf,
-		)
+// 		err := rows.Scan(
+// 			&mutation.Sample,
+// 			&mutation.Chr,
+// 			&mutation.Start,
+// 			&mutation.End,
+// 			&mutation.Ref,
+// 			&mutation.Tum,
+// 			&mutation.Alt,
+// 			&mutation.Depth,
+// 			&mutation.Type,
+// 			&mutation.Vaf,
+// 		)
 
-		if err != nil {
-			fmt.Println(err)
-		}
+// 		if err != nil {
+// 			fmt.Println(err)
+// 		}
 
-		mutations = append(mutations, &mutation)
-	}
+// 		mutations = append(mutations, &mutation)
+// 	}
 
-	log.Debug().Msgf("all the muts %d", len(mutations))
+// 	log.Debug().Msgf("all the muts %d", len(mutations))
 
-	return mutations, nil
-}
+// 	return mutations, nil
+// }
