@@ -22,6 +22,20 @@ type (
 		Locations []string `json:"locations"`
 		Datasets  []string `json:"datasets"`
 	}
+
+	PileupResp struct {
+		Location *dna.Location `json:"location"`
+		//Info      []*mutations.MutationDBInfo `json:"info"`
+		Samples   int                     `json:"samples"`
+		Mutations [][]*mutations.Mutation `json:"mutations"`
+	}
+
+	MafResp struct {
+		Location *dna.Location `json:"location"`
+		//Info      []*mutations.MutationDB `json:"info"`
+		Samples   int        `json:"samples"`
+		Mutations [][]string `json:"mutations"`
+	}
 )
 
 func ParseParamsFromPost(c *gin.Context) (*MutationParams, error) {
@@ -45,7 +59,7 @@ func ParseParamsFromPost(c *gin.Context) (*MutationParams, error) {
 
 func MutationDatasetsRoute(c *gin.Context) {
 	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *auth.AuthUserJwtClaims) {
-		assembly := c.Query("assembly")
+		assembly := c.Param("assembly")
 
 		datasets, err := mutationdb.Datasets(assembly, isAdmin, user.Permissions)
 
@@ -56,6 +70,59 @@ func MutationDatasetsRoute(c *gin.Context) {
 
 		web.MakeDataResp(c, "", datasets)
 	})
+}
+
+func PileupRoute(c *gin.Context) {
+	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *auth.AuthUserJwtClaims) {
+
+		assembly := c.Param("assembly")
+
+		params, err := ParseParamsFromPost(c)
+
+		if err != nil {
+			c.Error(err)
+			return
+		}
+
+		//log.Debug().Msgf("pileup: %v %v", params, user.Permissions)
+
+		location := params.Locations[0]
+
+		//assembly := c.Query("assembly")
+		//name := c.Param("name")
+
+		// ret := PileupResp{Location: location,
+		// 	// one metadata file for each database requested
+		// 	//Info:      make([]*mutations.MutationDBInfo, len(params.Databases)),
+		// 	Mutations: make([][]*mutations.Mutation, location.Len())}
+
+		// for i := range location.Len() {
+		// 	ret.Mutations[i] = make([]*mutations.Mutation, 0, 10)
+		// }
+
+		search, err := mutationdb.Search(assembly,
+			location,
+			params.Datasets,
+			isAdmin,
+			user.Permissions)
+
+		if err != nil {
+			log.Debug().Msgf("here 1 %s", err)
+			c.Error(err)
+			return
+		}
+
+		pileup, err := mutations.GetPileup(search)
+
+		if err != nil {
+			c.Error(err)
+			return
+		}
+
+		web.MakeDataResp(c, "", pileup)
+	})
+
+	//web.MakeDataResp(c, "", mutationdbcache.GetInstance().List())
 }
 
 func MutationsRoute(c *gin.Context) {
@@ -71,7 +138,7 @@ func MutationsRoute(c *gin.Context) {
 
 		location := params.Locations[0]
 
-		search, err := mutationdb.GetInstance().Search(assembly,
+		search, err := mutationdb.Search(assembly,
 			location,
 			params.Datasets,
 			isAdmin,
@@ -101,13 +168,6 @@ func MutationsRoute(c *gin.Context) {
 		web.MakeDataResp(c, "", search)
 
 	})
-}
-
-type MafResp struct {
-	Location *dna.Location `json:"location"`
-	//Info      []*mutations.MutationDB `json:"info"`
-	Samples   int        `json:"samples"`
-	Mutations [][]string `json:"mutations"`
 }
 
 // func MafRoute(c *gin.Context) {
@@ -192,65 +252,3 @@ type MafResp struct {
 
 // 	//web.MakeDataResp(c, "", mutationdbcache.GetInstance().List())
 // }
-
-type PileupResp struct {
-	Location *dna.Location `json:"location"`
-	//Info      []*mutations.MutationDBInfo `json:"info"`
-	Samples   int                     `json:"samples"`
-	Mutations [][]*mutations.Mutation `json:"mutations"`
-}
-
-func PileupRoute(c *gin.Context) {
-	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *auth.AuthUserJwtClaims) {
-
-		assembly := c.Query("assembly")
-
-		params, err := ParseParamsFromPost(c)
-
-		if err != nil {
-			c.Error(err)
-			return
-		}
-
-		log.Debug().Msgf("pileup: %v %v", params, user.Permissions)
-
-		location := params.Locations[0]
-
-		log.Debug().Msgf("pileup location: %v", location)
-
-		//assembly := c.Query("assembly")
-		//name := c.Param("name")
-
-		// ret := PileupResp{Location: location,
-		// 	// one metadata file for each database requested
-		// 	//Info:      make([]*mutations.MutationDBInfo, len(params.Databases)),
-		// 	Mutations: make([][]*mutations.Mutation, location.Len())}
-
-		// for i := range location.Len() {
-		// 	ret.Mutations[i] = make([]*mutations.Mutation, 0, 10)
-		// }
-
-		search, err := mutationdb.Search(assembly,
-			location,
-			params.Datasets,
-			isAdmin,
-			user.Permissions)
-
-		if err != nil {
-			log.Debug().Msgf("here 1 %s", err)
-			c.Error(err)
-			return
-		}
-
-		pileup, err := mutations.GetPileup(search)
-
-		if err != nil {
-			c.Error(err)
-			return
-		}
-
-		web.MakeDataResp(c, "", pileup)
-	})
-
-	//web.MakeDataResp(c, "", mutationdbcache.GetInstance().List())
-}

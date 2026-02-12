@@ -447,8 +447,6 @@ func (mdb *MutationsDB) Search(assembly string,
 
 	log.Debug().Msgf("querying mutations db with %v %s", isAdmin, query)
 
-	log.Debug().Msgf("named args: %v", namedArgs)
-
 	if err != nil {
 		log.Debug().Msgf("error querying mutations db: %s", err)
 		return nil, err
@@ -475,7 +473,7 @@ func (mdb *MutationsDB) Search(assembly string,
 			&mutation.Vaf,
 		)
 
-		log.Debug().Msgf("found mutation %v", mutation)
+		//log.Debug().Msgf("found mutation %v", mutation)
 
 		if err != nil {
 			return nil, err
