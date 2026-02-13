@@ -102,8 +102,8 @@ type (
 const (
 	DatasetsSql = `SELECT DISTINCT
 		d.public_id AS dataset_id,
-		d.genome,
-		d.assembly,
+		g.name AS genome,
+		a.name AS assembly,
 		d.institution,
 		d.name,
 		d.short_name,
@@ -116,6 +116,8 @@ const (
 		s.paired_normal_dna
 		FROM datasets d
 		JOIN dataset_permissions dp ON d.id = dp.dataset_id
+		JOIN assemblies a ON d.assembly_id = a.id
+		JOIN genomes g ON a.genome_id = g.id
 		JOIN permissions p ON dp.permission_id = p.id
 		JOIN samples s ON s.dataset_id = d.id
 		WHERE 
@@ -127,12 +129,14 @@ const (
 
 	BaseSearchSamplesSql = `SELECT	
 		s.id,
-		d.genome,
-		d.assembly,	
+		g.name AS genome,
+		a.name AS assembly,
 		d.name as dataset_name,
 		s.name as sample_name,
 		FROM samples s
 		JOIN datasets d ON s.dataset_id = d.id
+		JOIN assemblies a ON d.assembly_id = a.id
+		JOIN genomes g ON a.genome_id = g.id
 		JOIN dataset_permissions dp ON s.dataset_id = dp.dataset_id
 		JOIN permissions p ON dp.permission_id = p.id
 		WHERE 

@@ -4,13 +4,13 @@ import sqlite3
 import sys
 
 import pandas as pd
+import uuid_utils as uuid
 from nanoid import generate
-from uuid_utils import uuid7
 
 genome = "Human"
 assembly = "hg19"
 
-rdf_view_id = "019c1f92-5632-71cb-a9de-487b80d376a5"
+rdf_view_id = str(uuid.uuid7())
 
 
 idMap = {"20_icg": "20icg", "29_cell_lines": "29cl", "73_bcca": "73primary"}
@@ -49,8 +49,6 @@ HUMAN_CHRS = [
     "chrM",
 ]
 
-CHR_MAP = {chr: idx + 1 for idx, chr in enumerate(HUMAN_CHRS)}
-
 MOUSE_CHRS = [
     "chr1",
     "chr2",
@@ -76,6 +74,11 @@ MOUSE_CHRS = [
     "chrM",
 ]
 
+CHR_MAP = {
+    "Human": {chr: idx + 1 for idx, chr in enumerate(HUMAN_CHRS)},
+    "Mouse": {chr: idx + 1 for idx, chr in enumerate(MOUSE_CHRS)},
+}
+
 dir = f"../data/modules/mutations"
 
 file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/93primary_29cl_dlbcl_hg19/samples.txt"
@@ -83,7 +86,7 @@ file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/
 df_samples = pd.read_csv(file, sep="\t", header=0, keep_default_na=False)
 datasets = list(sorted(df_samples["Dataset"].unique()))
 sample_map = {
-    sample: {"index": i + 1, "public_id": uuid7()}
+    sample: {"index": i + 1, "public_id": str(uuid.uuid7())}
     for i, sample in enumerate(df_samples["Sample"].values)
 }
 
@@ -95,7 +98,7 @@ for i, dataset in enumerate(datasets):
 
     dataset_map[dataset] = {
         "index": i + 1,
-        "public_id": uuid7(),
+        "public_id": str(uuid.uuid7()),
         "institution": institution,
     }
 
@@ -111,13 +114,8 @@ metadata_json_map = {
     "Type": {"camelCase": "type", "short": "t"},
 }
 
-chrs = HUMAN_CHRS if genome.lower() == "human" else MOUSE_CHRS
-chr_map = {chr: idx + 1 for idx, chr in enumerate(chrs)}
 
 metadata_map = {meta: mi + 1 for mi, meta in enumerate(metadata)}
-
-
-print(sample_map)
 
 
 # dataset_dir = os.path.join(dir, shortName)
@@ -136,7 +134,53 @@ conn = sqlite3.connect(db)
 conn.row_factory = sqlite3.Row
 cursor = conn.cursor()
 
-cursor.execute("BEGIN TRANSACTION;")
+cursor.execute(
+    f"""
+    CREATE TABLE genomes (
+        id INTEGER PRIMARY KEY,
+        public_id TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        scientific_name TEXT NOT NULL,
+        UNIQUE(name, scientific_name));
+    """,
+)
+cursor.execute("CREATE INDEX idx_genomes_name ON genomes(LOWER(name));")
+cursor.execute(
+    f"INSERT INTO genomes (id, public_id, name, scientific_name) VALUES (1, '{uuid.uuid7()}', 'Human', 'Homo sapiens');"
+)
+cursor.execute(
+    f"INSERT INTO genomes (id, public_id, name, scientific_name) VALUES (2, '{uuid.uuid7()}', 'Mouse', 'Mus musculus');"
+)
+
+genome_map = {
+    "human": 1,
+    "mouse": 2,
+}
+
+cursor.execute(
+    f"""
+    CREATE TABLE assemblies (
+        id INTEGER PRIMARY KEY,
+        public_id TEXT NOT NULL UNIQUE,
+        genome_id INTEGER NOT NULL,
+        name TEXT NOT NULL UNIQUE,
+        FOREIGN KEY (genome_id) REFERENCES genomes(id) ON DELETE CASCADE);
+    """,
+)
+cursor.execute("CREATE INDEX idx_assemblies_name ON assemblies(LOWER(name));")
+cursor.execute("CREATE INDEX idx_assemblies_genome_id ON assemblies (genome_id);")
+
+cursor.execute(
+    f"INSERT INTO assemblies (id, public_id, genome_id, name) VALUES (1, '{uuid.uuid7()}', 1, 'hg19');"
+)
+cursor.execute(
+    f"INSERT INTO assemblies (id, public_id, genome_id, name) VALUES (2, '{uuid.uuid7()}', 1, 'GRCh38');"
+)
+cursor.execute(
+    f"INSERT INTO assemblies (id, public_id, genome_id, name) VALUES (3, '{uuid.uuid7()}', 2, 'GRCm39');"
+)
+
+assembly_map = {"hg19": 1, "GRCh38": 2, "GRCm39": 3}
 
 cursor.execute(
     f"""CREATE TABLE metadata (
@@ -149,23 +193,42 @@ cursor.execute(
 )
 
 cursor.execute(
-    f"""INSERT INTO metadata (id, public_id, name, version) VALUES (1, '{uuid7()}', 'mutations', '1.0.0');"""
+    f"""INSERT INTO metadata (id, public_id, name, version) VALUES (1, '{uuid.uuid7()}', 'mutations', '1.0.0');"""
 )
 
 cursor.execute(
     f"""CREATE TABLE chromosomes (
     id INTEGER PRIMARY KEY,
     public_id TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL
-    );
+    genome_id INTEGER NOT NULL,
+    chr_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    FOREIGN KEY (genome_id) REFERENCES genomes(id) ON DELETE CASCADE);
 """
 )
 
-for chr in chrs:
-    uuid = uuid7()
+cursor.execute("CREATE INDEX idx_chromosomes_genome_id ON chromosomes (genome_id);")
+
+chr_map = {
+    "Human": {},
+    "Mouse": {},
+}
+
+chr_index = 1
+
+for chr in HUMAN_CHRS:
     cursor.execute(
-        f"INSERT INTO chromosomes (id, public_id, name) VALUES ({chr_map[chr]}, '{uuid}', '{chr}');"
+        f"INSERT INTO chromosomes (public_id, genome_id, chr_id, name) VALUES ('{str(uuid.uuid7())}', 1, {CHR_MAP['Human'][chr]}, '{chr}');",
     )
+    chr_map["Human"][chr] = chr_index
+    chr_index += 1
+
+for chr in MOUSE_CHRS:
+    cursor.execute(
+        f"INSERT INTO chromosomes (public_id, genome_id, chr_id, name) VALUES ('{str(uuid.uuid7())}', 2, {CHR_MAP['Mouse'][chr]}, '{chr}');",
+    )
+    chr_map["Mouse"][chr] = chr_index
+    chr_index += 1
 
 cursor.execute(
     f"""CREATE TABLE permissions (
@@ -176,6 +239,7 @@ cursor.execute(
 """
 )
 
+
 cursor.execute(
     f"INSERT INTO permissions (id, public_id, name) VALUES (1, '{rdf_view_id}', 'rdf:view');",
 )
@@ -184,16 +248,19 @@ cursor.execute(
     f"""CREATE TABLE datasets (
     id INTEGER PRIMARY KEY,
     public_id TEXT NOT NULL UNIQUE,
-    genome TEXT NOT NULL,
-    assembly TEXT NOT NULL,
+    assembly_id INTEGER NOT NULL,
     institution TEXT NOT NULL DEFAULT "",
     name TEXT NOT NULL,
     short_name TEXT NOT NULL,
     mutations INTEGER NOT NULL DEFAULT 0,
-    description TEXT NOT NULL DEFAULT ""
+    description TEXT NOT NULL DEFAULT "",
+    FOREIGN KEY(assembly_id) REFERENCES assemblies(id)
     );
 """
 )
+
+cursor.execute("CREATE INDEX idx_datasets_name ON datasets (LOWER(name));")
+cursor.execute("CREATE INDEX idx_datasets_assembly_id ON datasets (assembly_id);")
 
 cursor.execute(
     f"""CREATE TABLE dataset_permissions (
@@ -204,6 +271,13 @@ cursor.execute(
     FOREIGN KEY(permission_id) REFERENCES permissions(id)
     );
 """
+)
+
+cursor.execute(
+    "CREATE INDEX idx_dataset_permissions_dataset_id ON dataset_permissions (dataset_id);"
+)
+cursor.execute(
+    "CREATE INDEX idx_dataset_permissions_permission_id ON dataset_permissions (permission_id);"
 )
 
 
@@ -221,6 +295,8 @@ cursor.execute(
     );
     """
 )
+cursor.execute("CREATE INDEX idx_samples_dataset_id ON samples (dataset_id);")
+cursor.execute("CREATE INDEX idx_samples_name ON samples (LOWER(name));")
 
 cursor.execute(
     f""" CREATE TABLE sample_metadata (
@@ -232,6 +308,13 @@ cursor.execute(
     FOREIGN KEY(metadata_id) REFERENCES metadata(id)
     );
     """
+)
+
+cursor.execute(
+    "CREATE INDEX idx_sample_metadata_sample_id ON sample_metadata (sample_id);"
+)
+cursor.execute(
+    "CREATE INDEX idx_sample_metadata_metadata_id ON sample_metadata (metadata_id);"
 )
 
 cursor.execute(
@@ -254,6 +337,12 @@ cursor.execute(
     );
     """
 )
+cursor.execute(
+    f"""CREATE INDEX idx_mutations_chr_id_start_end ON mutations (chr_id, start, end);"""
+)
+cursor.execute(
+    f"""CREATE INDEX idx_mutations_gene_symbol ON mutations (LOWER(hugo_gene_symbol)); """
+)
 
 
 # for meta in metadata:
@@ -262,9 +351,7 @@ cursor.execute(
 #         f"INSERT INTO metadata (id, public_id, name, short_name) VALUES ({metadata_map[meta]}, '{public_id}', '{meta}', '{metadata_json_map[meta]["camelCase"]}');",
 #     )
 
-cursor.execute("COMMIT;")
-
-
+genome = "Human"
 file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/93primary_29cl_dlbcl_hg19/93primary_29cl_rename_samples_hg19.maf.txt"
 
 df = pd.read_csv(file, sep="\t", header=0, keep_default_na=False)
@@ -277,30 +364,24 @@ for di, dataset in enumerate(datasets):
     dataset_id = dataset_map[dataset]["public_id"]
     institution = dataset_map[dataset]["institution"]
 
-    shortName = idMap[dataset]
+    short_name = idMap[dataset]
     df_samples_d = df_samples[df_samples["Dataset"] == dataset]
 
-    print(df_samples_d["Sample"].shape)
-
     dfd = df[df["Sample"].isin(df_samples_d["Sample"])]
+
+    print(short_name)
 
     mutation_counts = dfd.shape[0]
 
     name = renameMap[dataset]
 
-    cursor.execute("BEGIN TRANSACTION;")
-
     cursor.execute(
-        f"INSERT INTO datasets (id, public_id,  genome, assembly, institution, name, short_name, mutations) VALUES ({dataset_index}, '{dataset_id}', '{genome}', '{assembly}', '{institution}', '{name}', '{shortName}', {mutation_counts});",
+        f"INSERT INTO datasets (id, public_id, assembly_id, institution, name, short_name, mutations) VALUES ({dataset_index}, '{dataset_id}', {assembly_map[assembly]}, '{institution}', '{name}', '{short_name}', {mutation_counts});",
     )
 
     cursor.execute(
         f"INSERT INTO dataset_permissions (dataset_id, permission_id) VALUES ({dataset_index}, 1);",
     )
-
-    cursor.execute("COMMIT;")
-
-    cursor.execute("BEGIN TRANSACTION;")
 
     for i in range(df_samples_d.shape[0]):
         sample = df_samples_d["Sample"].values[i]
@@ -321,35 +402,10 @@ for di, dataset in enumerate(datasets):
             f"INSERT INTO samples (id, public_id, dataset_id, name, coo, lymphgen_class, paired_normal_dna, type) VALUES ({sample_index}, '{sample_id}', {dataset_index}, '{sample}', '{coo}', '{lymphgen}', '{paired}', '{sample_type}') ON CONFLICT DO NOTHING;",
         )
 
-        # for meta in metadata:
-        #     n = "Sample type" if meta == "Type" else meta
-
-        #     value = df_samples_d[n].values[i]
-        #     cursor.execute(
-        #         f"INSERT INTO sample_metadata (sample_id, metadata_id, value) VALUES ({sample_index}, {metadata_map[meta]}, '{value}');",
-        #     )
-
-    cursor.execute("COMMIT;")
-
-    # cursor.close()
-
-    # chrs = dfd["Chromosome"].unique()
-
-    # for chr in chrs:
-    #     dfd_chr = dfd[dfd["Chromosome"] == chr]
-
-    #     db = f"mutations_{chr}.db"
-
-    #     if os.path.exists(db):
-    #         os.remove(db)
-
-    #     conn = sqlite3.connect(db)
-    #     cursor = conn.cursor()
-
-    cursor.execute("BEGIN TRANSACTION;")
-
     for i in range(dfd.shape[0]):
-        mutation_uuid = uuid7()  # generate("0123456789abcdefghijklmnopqrstuvwxyz", 12)
+        mutation_uuid = str(
+            uuid.uuid7()
+        )  # generate("0123456789abcdefghijklmnopqrstuvwxyz", 12)
 
         chr = dfd["Chromosome"].values[i]
 
@@ -357,10 +413,10 @@ for di, dataset in enumerate(datasets):
         chr = chr.replace("CHR", "")
         chr = "chr" + chr
 
-        if chr not in chr_map:
+        if chr not in chr_map[genome]:
             continue
 
-        chr_id = chr_map[chr]
+        chr_id = chr_map[genome][chr]
 
         start = dfd["Start_Position"].values[i]
         end = dfd["End_Position"].values[i]
@@ -388,15 +444,6 @@ for di, dataset in enumerate(datasets):
             f"INSERT INTO mutations (sample_id, chr_id, start, end, ref, tum, t_alt_count, t_depth, variant_type, vaf) VALUES ({sample_index}, {chr_id}, {start}, {end}, '{ref}', '{tum}', {t_alt_count}, {t_depth}, '{variant_type}', {vaf});",
         )
 
-    cursor.execute("COMMIT;")
 
-cursor.execute("BEGIN TRANSACTION;")
-
-cursor.execute(
-    f"""CREATE INDEX mutations_chr_id_start_end_idx ON mutations (chr_id, start, end);"""
-)
-cursor.execute(f"""CREATE INDEX mutations_gene_idx ON mutations (hugo_gene_symbol); """)
-cursor.execute("COMMIT;")
-
-# cursor.close()
-# conn.close()
+conn.commit()
+conn.close()
