@@ -11,8 +11,8 @@ replace github.com/antonybholmes/go-sys => ../go-sys
 replace github.com/antonybholmes/go-web => ../go-web
 
 require (
-	github.com/antonybholmes/go-dna v0.0.0-20260209231207-c73931d48c05
-	github.com/antonybholmes/go-sys v0.0.0-20260209231212-cfd21298d6eb
+	github.com/antonybholmes/go-dna v0.0.0-20260212180504-ca50711b47d7
+	github.com/antonybholmes/go-sys v0.0.0-20260212180605-968a7a2e270d
 	github.com/gin-gonic/gin v1.11.0
 	github.com/rs/zerolog v1.34.0
 )
