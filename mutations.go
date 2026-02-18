@@ -122,7 +122,7 @@ const (
 		JOIN samples s ON s.dataset_id = d.id
 		WHERE 
 			<<PERMISSIONS>>
-			AND LOWER(d.assembly) = :assembly
+			AND LOWER(a.name) = :assembly
 		ORDER BY
 			d.name, 
 			s.name`
@@ -141,7 +141,7 @@ const (
 		JOIN permissions p ON dp.permission_id = p.id
 		WHERE 
 			<<PERMISSIONS>>
-			AND LOWER(d.assembly) = :assembly`
+			AND LOWER(a.name) = :assembly`
 
 	AllSamplesSql = BaseSearchSamplesSql +
 		` ORDER BY
