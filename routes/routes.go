@@ -7,7 +7,7 @@ import (
 	"github.com/antonybholmes/go-mutations/mutationdb"
 	"github.com/antonybholmes/go-sys/log"
 	"github.com/antonybholmes/go-web"
-	"github.com/antonybholmes/go-web/auth"
+	"github.com/antonybholmes/go-web/auth/token"
 	"github.com/antonybholmes/go-web/middleware"
 	"github.com/gin-gonic/gin"
 )
@@ -58,7 +58,7 @@ func ParseParamsFromPost(c *gin.Context) (*MutationParams, error) {
 }
 
 func MutationDatasetsRoute(c *gin.Context) {
-	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *auth.AuthUserJwtClaims) {
+	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *token.AuthUserJwtClaims) {
 		assembly := c.Param("assembly")
 
 		datasets, err := mutationdb.Datasets(assembly, isAdmin, user.Permissions)
@@ -73,7 +73,7 @@ func MutationDatasetsRoute(c *gin.Context) {
 }
 
 func PileupRoute(c *gin.Context) {
-	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *auth.AuthUserJwtClaims) {
+	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *token.AuthUserJwtClaims) {
 
 		assembly := c.Param("assembly")
 
@@ -126,7 +126,7 @@ func PileupRoute(c *gin.Context) {
 }
 
 func MutationsRoute(c *gin.Context) {
-	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *auth.AuthUserJwtClaims) {
+	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *token.AuthUserJwtClaims) {
 		assembly := c.Query("assembly")
 
 		params, err := ParseParamsFromPost(c)
