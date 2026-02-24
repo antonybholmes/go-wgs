@@ -11,7 +11,7 @@ replace github.com/antonybholmes/go-sys => ../go-sys
 replace github.com/antonybholmes/go-web => ../go-web
 
 require (
-	github.com/antonybholmes/go-dna v0.0.0-20260217230140-e57c465f5f15
+	github.com/antonybholmes/go-dna v0.0.0-20260220203430-f58fff3f7a19
 	github.com/antonybholmes/go-sys v0.0.0-20260216173437-1755a134eb0d
 	github.com/gin-gonic/gin v1.11.0
 	github.com/rs/zerolog v1.34.0
@@ -60,7 +60,7 @@ require (
 
 require (
 	github.com/antonybholmes/go-basemath v0.0.0-20260204001030-d512600734fa // indirect
-	github.com/antonybholmes/go-web v0.0.0-20260213183935-aaedefa50d12
+	github.com/antonybholmes/go-web v0.0.0-20260224185041-42ccb858f60c
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/matoous/go-nanoid/v2 v2.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
