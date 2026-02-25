@@ -1,5 +1,6 @@
 import collections
 import os
+import re
 import sqlite3
 import sys
 
@@ -12,6 +13,41 @@ assembly = "hg19"
 
 rdf_view_id = str(uuid.uuid7())
 
+
+datasets = [
+    {
+        "name": "73 primary",
+        "short_name": "73primary",
+        "size": 73,
+        "institution": "Columbia",
+        "index": 1,
+        "public_id": str(uuid.uuid7()),
+    },
+    {
+        "name": "20 ICG",
+        "short_name": "20icg",
+        "size": 20,
+        "institution": "Columbia",
+        "index": 2,
+        "public_id": str(uuid.uuid7()),
+    },
+    {
+        "name": "29 cell lines",
+        "short_name": "29cl",
+        "size": 29,
+        "institution": "Columbia",
+        "index": 3,
+        "public_id": str(uuid.uuid7()),
+    },
+    {
+        "name": "BCCA 150 2024",
+        "short_name": "bcca",
+        "size": 150,
+        "institution": "BCCA",
+        "index": 4,
+        "public_id": str(uuid.uuid7()),
+    },
+]
 
 idMap = {"20_icg": "20icg", "29_cell_lines": "29cl", "73_bcca": "73primary"}
 
@@ -81,26 +117,28 @@ CHR_MAP = {
 
 dir = f"../data/modules/mutations"
 
-file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/93primary_29cl_dlbcl_hg19/samples.txt"
+file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/DLBCL_Master_121625.xlsx"
 
-df_samples = pd.read_csv(file, sep="\t", header=0, keep_default_na=False)
-datasets = list(sorted(df_samples["Dataset"].unique()))
+df_samples = pd.read_excel(
+    file, sheet_name="Study_Panel_283", header=0, keep_default_na=False
+)
+
+# force sample id to be string
+df_samples["Sample ID"] = df_samples["Sample ID"].astype(str)
+
 sample_map = {
     sample: {"index": i + 1, "public_id": str(uuid.uuid7())}
-    for i, sample in enumerate(df_samples["Sample"].values)
+    for i, sample in enumerate(df_samples["Sample ID"].values)
 }
 
-dataset_map = {}
 
-for i, dataset in enumerate(datasets):
-    df_ds = df_samples[df_samples["Dataset"] == dataset]
-    institution = list(df_ds["Institution"].unique())[0]
+# for i, dataset in enumerate(datasets):
+#     df_ds = df_samples[df_samples["Dataset"] == dataset]
+#     institution = list(df_ds["Institution"].unique())[0]
 
-    dataset_map[dataset] = {
-        "index": i + 1,
-        "public_id": str(uuid.uuid7()),
-        "institution": institution,
-    }
+#     dataset_map[dataset]["index"] = i + 1
+#     dataset_map[dataset]["public_id"] = str(uuid.uuid7())
+
 
 # sampleIdMap = {sample: i for i, sample in enumerate(df_samples["Sample"].values)}
 
@@ -183,7 +221,27 @@ cursor.execute(
 assembly_map = {"hg19": 1, "GRCh38": 2, "GRCm39": 3}
 
 cursor.execute(
-    f"""CREATE TABLE metadata (
+    f"""
+    CREATE TABLE institutions (
+        id INTEGER PRIMARY KEY,
+        public_id TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL UNIQUE);
+    """,
+)
+cursor.execute("CREATE INDEX idx_institutions_name ON institutions(LOWER(name));")
+
+cursor.execute(
+    f"INSERT INTO institutions (id, public_id, name) VALUES (1, '{uuid.uuid7()}', 'Columbia');"
+)
+cursor.execute(
+    f"INSERT INTO institutions (id, public_id, name) VALUES (2, '{uuid.uuid7()}', 'BCCA');"
+)
+
+institution_map = {"columbia": 1, "bcca": 2}
+
+
+cursor.execute(
+    f"""CREATE TABLE info (
     id INTEGER PRIMARY KEY,
     public_id TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
@@ -193,7 +251,7 @@ cursor.execute(
 )
 
 cursor.execute(
-    f"""INSERT INTO metadata (id, public_id, name, version) VALUES (1, '{uuid.uuid7()}', 'mutations', '1.0.0');"""
+    f"""INSERT INTO info (id, public_id, name, version) VALUES (1, '{uuid.uuid7()}', 'mutations', '1.0.0');"""
 )
 
 cursor.execute(
@@ -249,12 +307,13 @@ cursor.execute(
     id INTEGER PRIMARY KEY,
     public_id TEXT NOT NULL UNIQUE,
     assembly_id INTEGER NOT NULL,
-    institution TEXT NOT NULL DEFAULT "",
+    institution_id INTEGER NOT NULL,
     name TEXT NOT NULL,
     short_name TEXT NOT NULL,
     mutations INTEGER NOT NULL DEFAULT 0,
     description TEXT NOT NULL DEFAULT "",
-    FOREIGN KEY(assembly_id) REFERENCES assemblies(id)
+    FOREIGN KEY(assembly_id) REFERENCES assemblies(id),
+    FOREIGN KEY(institution_id) REFERENCES institutions(id)
     );
 """
 )
@@ -322,8 +381,6 @@ cursor.execute(
     id INTEGER PRIMARY KEY,
     sample_id INTEGER NOT NULL,
     hugo_gene_symbol TEXT NOT NULL DEFAULT '',
-    variant_classification TEXT NOT NULL DEFAULT '',
-    variant_type TEXT NOT NULL DEFAULT '',
     chr_id INTEGER NOT NULL,
     start INTEGER NOT NULL,
     end INTEGER NOT NULL,
@@ -344,6 +401,17 @@ cursor.execute(
     f"""CREATE INDEX idx_mutations_gene_symbol ON mutations (LOWER(hugo_gene_symbol)); """
 )
 
+# cursor.execute(
+#     f""" CREATE TABLE sample_mutations (
+#     sample_id INTEGER NOT NULL,
+#     mutation_id INTEGER NOT NULL,
+#     PRIMARY KEY (sample_id, mutation_id),
+#     FOREIGN KEY(sample_id) REFERENCES samples(id),
+#     FOREIGN KEY(mutation_id) REFERENCES mutations(id)
+#     );
+#     """
+# )
+
 
 # for meta in metadata:
 #     uuid = uuid7()
@@ -352,60 +420,77 @@ cursor.execute(
 #     )
 
 genome = "Human"
-file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/93primary_29cl_dlbcl_hg19/93primary_29cl_rename_samples_hg19.maf.txt"
+file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/bcca2024_73primary_29cl_20icg_hg19/bcca2024_73primary_29cl_20icg_hg19.maf.txt"
+# "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/93primary_29cl_dlbcl_hg19/93primary_29cl_rename_samples_hg19.maf.txt"
 
 df = pd.read_csv(file, sep="\t", header=0, keep_default_na=False)
+df["Sample"] = df["Sample"].astype(str)
 
 # sort by Chromosome col
 # df = df.sort_values(by="Chromosome")
 
+mutation_map = {}
+sample_map = {}
+
 for di, dataset in enumerate(datasets):
-    dataset_index = dataset_map[dataset]["index"]
-    dataset_id = dataset_map[dataset]["public_id"]
-    institution = dataset_map[dataset]["institution"]
+    dataset_index = dataset["index"]
+    dataset_id = dataset["public_id"]
+    institution = dataset["institution"]
+    name = dataset["name"]
+    short_name = dataset["short_name"]
 
-    short_name = idMap[dataset]
-    df_samples_d = df_samples[df_samples["Dataset"] == dataset]
+    if institution.lower() not in institution_map:
+        idx = len(institution_map) + 1
+        institution_map[institution.lower()] = idx
+        cursor.execute(
+            f"INSERT INTO institutions (id, public_id, name) VALUES ({idx}, '{str(uuid.uuid7())}', '{institution}');",
+        )
 
-    dfd = df[df["Sample"].isin(df_samples_d["Sample"])]
+    institution_id = institution_map[institution.lower()]
 
-    print(short_name)
+    dfd = df[df["Dataset"] == short_name]
 
     mutation_counts = dfd.shape[0]
 
-    name = renameMap[dataset]
-
     cursor.execute(
-        f"INSERT INTO datasets (id, public_id, assembly_id, institution, name, short_name, mutations) VALUES ({dataset_index}, '{dataset_id}', {assembly_map[assembly]}, '{institution}', '{name}', '{short_name}', {mutation_counts});",
+        f"INSERT INTO datasets (id, public_id, assembly_id, institution_id, name, short_name, mutations) VALUES ({dataset_index}, '{dataset_id}', {assembly_map[assembly]}, {institution_id}, '{name}', '{short_name}', {mutation_counts});",
     )
 
     cursor.execute(
         f"INSERT INTO dataset_permissions (dataset_id, permission_id) VALUES ({dataset_index}, 1);",
     )
 
-    for i in range(df_samples_d.shape[0]):
-        sample = df_samples_d["Sample"].values[i]
-        sample_index = sample_map[sample]["index"]
-        sample_id = sample_map[sample]["public_id"]
-
-        coo = df_samples_d["COO"].values[i]
-
-        if "nd" in coo.lower():
-            coo = "NA"
-
-        lymphgen = df_samples_d["LymphGen class"].values[i]
-        paired = df_samples_d["Paired normal DNA"].values[i]
-        # ins = df_samples["Institution"].values[i]
-        sample_type = df_samples_d["Sample type"].values[i]
-
-        cursor.execute(
-            f"INSERT INTO samples (id, public_id, dataset_id, name, coo, lymphgen_class, paired_normal_dna, type) VALUES ({sample_index}, '{sample_id}', {dataset_index}, '{sample}', '{coo}', '{lymphgen}', '{paired}', '{sample_type}') ON CONFLICT DO NOTHING;",
-        )
-
     for i in range(dfd.shape[0]):
-        mutation_uuid = str(
-            uuid.uuid7()
-        )  # generate("0123456789abcdefghijklmnopqrstuvwxyz", 12)
+        # mutation_uuid = str(uuid.uuid7())
+        # generate("0123456789abcdefghijklmnopqrstuvwxyz", 12)
+
+        sample = dfd["Sample"].values[i]
+        # remove _allele_1 etc from sample name
+        sample = re.sub(r"_.+", "", sample)
+
+        if sample not in sample_map:
+            sample_map[sample] = len(sample_map) + 1
+            df_samples_d = df_samples[df_samples["Sample ID"] == sample]
+            sample_index = sample_map[sample]
+            sample_id = str(uuid.uuid7())
+
+            print(sample, df_samples_d)
+
+            coo = df_samples_d["COO class"].values[0]
+
+            if "nd" in coo.lower():
+                coo = "NA"
+
+            lymphgen = df_samples_d["LymphGen class"].values[0]
+            paired = df_samples_d["Paired normal DNA"].values[0]
+            # ins = df_samples["Institution"].values[i]
+            sample_type = df_samples_d["Sample type"].values[0]
+
+            cursor.execute(
+                f"INSERT INTO samples (id, public_id, dataset_id, name, coo, lymphgen_class, paired_normal_dna, type) VALUES ({sample_index}, '{sample_id}', {dataset_index}, '{sample}', '{coo}', '{lymphgen}', '{paired}', '{sample_type}') ON CONFLICT DO NOTHING;",
+            )
+
+        sample_index = sample_map[sample]
 
         chr = dfd["Chromosome"].values[i]
 
@@ -423,12 +508,12 @@ for di, dataset in enumerate(datasets):
         ref = dfd["Reference_Allele"].values[i]
         tum = dfd["Tumor_Seq_Allele2"].values[i]
         vaf = dfd["VAF"].values[i]
-        db = dfd["Database"].values[i]
+        db = dfd["Dataset"].values[i]
 
         if vaf == "na":
             vaf = -1
 
-        variant_type = dfd["Variant_Type"].values[i]
+        # variant_type = dfd["Variant_Type"].values[i]
 
         t_alt_count = dfd["t_alt_count"].values[i]
         t_depth = dfd["t_depth"].values[i]
@@ -439,10 +524,31 @@ for di, dataset in enumerate(datasets):
         if t_depth == "na":
             t_depth = -1
 
-        # so we can merge mutations from different tables, use the public_id as foreign key
-        cursor.execute(
-            f"INSERT INTO mutations (sample_id, chr_id, start, end, ref, tum, t_alt_count, t_depth, variant_type, vaf) VALUES ({sample_index}, {chr_id}, {start}, {end}, '{ref}', '{tum}', {t_alt_count}, {t_depth}, '{variant_type}', {vaf});",
-        )
+        snps = []
+
+        # split concatenated snps
+        if len(ref) > 1 and len(tum) > 1 and len(ref) == len(tum):
+            for idx in range(len(ref)):
+                ref_i = ref[idx]
+                tum_i = tum[idx]
+
+                if ref_i == tum_i:
+                    continue
+
+                start_i = start + idx
+                end_i = end - (len(ref) - idx - 1)
+
+                snps.append(
+                    {"start": start_i, "end": end_i, "ref": ref_i, "tum": tum_i}
+                )
+        else:
+            snps.append({"start": start, "end": end, "ref": ref, "tum": tum})
+
+        for snp in snps:
+            # so we can merge mutations from different tables, use the public_id as foreign key
+            cursor.execute(
+                f"INSERT INTO mutations (sample_id, chr_id, start, end, ref, tum, t_alt_count, t_depth, vaf) VALUES ({sample_index}, {chr_id}, {snp['start']}, {snp['end']}, '{snp['ref']}', '{snp['tum']}', {t_alt_count}, {t_depth}, {vaf});",
+            )
 
 
 conn.commit()
