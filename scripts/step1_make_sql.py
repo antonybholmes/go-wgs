@@ -40,8 +40,8 @@ datasets = [
         "public_id": str(uuid.uuid7()),
     },
     {
-        "name": "BCCA 150 2024",
-        "short_name": "bcca",
+        "name": "BCCA 150 primary 2024",
+        "short_name": "bcca2024",
         "size": 150,
         "institution": "BCCA",
         "index": 4,
@@ -310,6 +310,7 @@ cursor.execute(
     institution_id INTEGER NOT NULL,
     name TEXT NOT NULL,
     short_name TEXT NOT NULL,
+    samples INTEGER NOT NULL DEFAULT 0,
     mutations INTEGER NOT NULL DEFAULT 0,
     description TEXT NOT NULL DEFAULT "",
     FOREIGN KEY(assembly_id) REFERENCES assemblies(id),
@@ -320,6 +321,7 @@ cursor.execute(
 
 cursor.execute("CREATE INDEX idx_datasets_name ON datasets (LOWER(name));")
 cursor.execute("CREATE INDEX idx_datasets_assembly_id ON datasets (assembly_id);")
+cursor.execute("CREATE INDEX idx_datasets_institution_id ON datasets (institution_id);")
 
 cursor.execute(
     f"""CREATE TABLE dataset_permissions (
@@ -438,6 +440,7 @@ for di, dataset in enumerate(datasets):
     institution = dataset["institution"]
     name = dataset["name"]
     short_name = dataset["short_name"]
+    size = dataset["size"]
 
     if institution.lower() not in institution_map:
         idx = len(institution_map) + 1
@@ -453,7 +456,7 @@ for di, dataset in enumerate(datasets):
     mutation_counts = dfd.shape[0]
 
     cursor.execute(
-        f"INSERT INTO datasets (id, public_id, assembly_id, institution_id, name, short_name, mutations) VALUES ({dataset_index}, '{dataset_id}', {assembly_map[assembly]}, {institution_id}, '{name}', '{short_name}', {mutation_counts});",
+        f"INSERT INTO datasets (id, public_id, assembly_id, institution_id, name, short_name, samples, mutations) VALUES ({dataset_index}, '{dataset_id}', {assembly_map[assembly]}, {institution_id}, '{name}', '{short_name}', {size}, {mutation_counts});",
     )
 
     cursor.execute(

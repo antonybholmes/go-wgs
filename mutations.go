@@ -104,7 +104,7 @@ const (
 		d.public_id AS dataset_id,
 		g.name AS genome,
 		a.name AS assembly,
-		d.institution,
+		ins.name AS institution,
 		d.name,
 		d.short_name,
 		d.mutations,
@@ -115,11 +115,13 @@ const (
 		s.lymphgen_class,
 		s.paired_normal_dna
 		FROM datasets d
-		JOIN dataset_permissions dp ON d.id = dp.dataset_id
+		
 		JOIN assemblies a ON d.assembly_id = a.id
 		JOIN genomes g ON a.genome_id = g.id
-		JOIN permissions p ON dp.permission_id = p.id
+		JOIN institutions ins ON d.institution_id = ins.id
 		JOIN samples s ON s.dataset_id = d.id
+		JOIN dataset_permissions dp ON d.id = dp.dataset_id
+		JOIN permissions p ON dp.permission_id = p.id
 		WHERE 
 			<<PERMISSIONS>>
 			AND LOWER(a.name) = :assembly
