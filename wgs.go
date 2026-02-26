@@ -1,4 +1,4 @@
-package mutations
+package wgs
 
 import (
 	"database/sql"
@@ -63,7 +63,7 @@ type (
 		Mutations   int       `json:"mutations"`
 	}
 
-	Mutation struct {
+	Variant struct {
 		Dataset    string  `json:"dataset"`
 		Sample     string  `json:"sample"`
 		Chr        string  `json:"chr"`
@@ -79,14 +79,14 @@ type (
 	}
 
 	DatasetResults struct {
-		Dataset   string      `json:"dataset"`
-		Mutations []*Mutation `json:"mutations"`
+		Dataset  string     `json:"dataset"`
+		Variants []*Variant `json:"variants"`
 	}
 
 	PileupResults struct {
 		Location *dna.Location `json:"location"`
 		Datasets []string      `json:"datasets"`
-		Pileup   [][]*Mutation `json:"pileup"`
+		Pileup   [][]*Variant  `json:"pileup"`
 	}
 
 	SearchResults struct {
@@ -94,7 +94,7 @@ type (
 		DatasetResults []*DatasetResults `json:"results"`
 	}
 
-	MutationsDB struct {
+	WGSDB struct {
 		db  *sql.DB
 		dir string
 	}
@@ -205,8 +205,8 @@ func MakeInDatasetsSql(query string, datasetIds []string, namedArgs *[]any) stri
 	return strings.Replace(query, "<<DATASETS>>", "d.public_id IN ("+strings.Join(inPlaceholders, ",")+")", 1)
 }
 
-func (mutation *Mutation) Clone() *Mutation {
-	var ret Mutation = Mutation{Chr: mutation.Chr,
+func (mutation *Variant) Clone() *Variant {
+	var ret Variant = Variant{Chr: mutation.Chr,
 		Start:  mutation.Start,
 		End:    mutation.End,
 		Ref:    mutation.Ref,
@@ -221,18 +221,18 @@ func (mutation *Mutation) Clone() *Mutation {
 	return &ret
 }
 
-func NewMutationsDB(dir string) *MutationsDB {
+func NewWGSDB(dir string) *WGSDB {
 
-	db := sys.Must(sql.Open(sys.Sqlite3DB, filepath.Join(dir, "mutations.db"+sys.SqliteReadOnlySuffix)))
+	db := sys.Must(sql.Open(sys.Sqlite3DB, filepath.Join(dir, "wgs.db"+sys.SqliteReadOnlySuffix)))
 
-	return &MutationsDB{dir: dir, db: db}
+	return &WGSDB{dir: dir, db: db}
 }
 
-func (mdb *MutationsDB) Dir() string {
+func (mdb *WGSDB) Dir() string {
 	return mdb.dir
 }
 
-func (mdb *MutationsDB) Datasets(assembly string, isAdmin bool, permissions []string) ([]*Dataset, error) {
+func (mdb *WGSDB) Datasets(assembly string, isAdmin bool, permissions []string) ([]*Dataset, error) {
 	namedArgs := []any{sql.Named("assembly", web.FormatParam(assembly))}
 
 	query := sqlite.MakePermissionsSql(DatasetsSql, isAdmin, permissions, &namedArgs)
@@ -294,7 +294,7 @@ func (mdb *MutationsDB) Datasets(assembly string, isAdmin bool, permissions []st
 	return ret, nil
 }
 
-func (mdb *MutationsDB) Search(assembly string,
+func (mdb *WGSDB) Search(assembly string,
 	location *dna.Location,
 	datasetIds []string,
 	isAdmin bool,
@@ -324,7 +324,7 @@ func (mdb *MutationsDB) Search(assembly string,
 	var currentDatasetResults *DatasetResults
 
 	for rows.Next() {
-		var mutation Mutation
+		var mutation Variant
 
 		err := rows.Scan(
 			&mutation.Dataset,
@@ -350,11 +350,11 @@ func (mdb *MutationsDB) Search(assembly string,
 		// since ordered by dataset we can group here
 		if currentDatasetResults == nil || currentDatasetResults.Dataset != mutation.Dataset {
 			// create a new stores for this dataset and set to current
-			currentDatasetResults = &DatasetResults{Dataset: mutation.Dataset, Mutations: make([]*Mutation, 0, 100)}
+			currentDatasetResults = &DatasetResults{Dataset: mutation.Dataset, Variants: make([]*Variant, 0, 100)}
 			results.DatasetResults = append(results.DatasetResults, currentDatasetResults)
 		}
 
-		currentDatasetResults.Mutations = append(currentDatasetResults.Mutations, &mutation)
+		currentDatasetResults.Variants = append(currentDatasetResults.Variants, &mutation)
 	}
 
 	return &results, nil
@@ -363,7 +363,7 @@ func (mdb *MutationsDB) Search(assembly string,
 func GetPileup(search *SearchResults) (*PileupResults, error) {
 	// first lets fix deletions and insertions
 	for _, datasetResults := range search.DatasetResults {
-		for _, mutation := range datasetResults.Mutations {
+		for _, mutation := range datasetResults.Variants {
 			// change for sorting purposes so that ins always comes last
 			switch mutation.Type {
 			case "INS":
@@ -381,10 +381,10 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 
 	// put together by position, type, tum
 
-	pileupMap := make(map[int]map[string]map[string][]*Mutation)
+	pileupMap := make(map[int]map[string]map[string][]*Variant)
 
 	for _, datasetResults := range search.DatasetResults {
-		for _, mutation := range datasetResults.Mutations {
+		for _, mutation := range datasetResults.Variants {
 
 			mutation.Dataset = datasetResults.Dataset
 
@@ -411,10 +411,10 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 	location := search.Location
 
 	// init pileup
-	pileup := make([][]*Mutation, location.Len())
+	pileup := make([][]*Variant, location.Len())
 
 	for i := range location.Len() {
-		pileup[i] = []*Mutation{}
+		pileup[i] = []*Variant{}
 	}
 
 	// get sorted start positions
@@ -470,25 +470,25 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 }
 
 func addToPileupMap(start int,
-	mutation *Mutation,
-	pileupMap *map[int]map[string]map[string][]*Mutation) {
+	mutation *Variant,
+	pileupMap *map[int]map[string]map[string][]*Variant) {
 
 	_, ok := (*pileupMap)[start]
 
 	if !ok {
-		(*pileupMap)[start] = make(map[string]map[string][]*Mutation)
+		(*pileupMap)[start] = make(map[string]map[string][]*Variant)
 	}
 
 	_, ok = (*pileupMap)[start][mutation.Type]
 
 	if !ok {
-		(*pileupMap)[start][mutation.Type] = make(map[string][]*Mutation)
+		(*pileupMap)[start][mutation.Type] = make(map[string][]*Variant)
 	}
 
 	_, ok = (*pileupMap)[start][mutation.Type][mutation.Tum]
 
 	if !ok {
-		(*pileupMap)[start][mutation.Type][mutation.Tum] = make([]*Mutation, 0, 100)
+		(*pileupMap)[start][mutation.Type][mutation.Tum] = make([]*Variant, 0, 100)
 	}
 
 	(*pileupMap)[start][mutation.Type][mutation.Tum] = append((*pileupMap)[start][mutation.Type][mutation.Tum], mutation)

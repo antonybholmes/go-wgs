@@ -1,4 +1,4 @@
-module github.com/antonybholmes/go-mutations
+module github.com/antonybholmes/go-wgs
 
 go 1.25
 

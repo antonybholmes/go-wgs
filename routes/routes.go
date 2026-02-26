@@ -2,13 +2,14 @@ package routes
 
 import (
 	"github.com/antonybholmes/go-dna"
+	"github.com/antonybholmes/go-wgs/wgsdb"
 
-	"github.com/antonybholmes/go-mutations"
-	"github.com/antonybholmes/go-mutations/mutationdb"
 	"github.com/antonybholmes/go-sys/log"
 	"github.com/antonybholmes/go-web"
 	"github.com/antonybholmes/go-web/auth/token"
 	"github.com/antonybholmes/go-web/middleware"
+	"github.com/antonybholmes/go-wgs"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,8 +27,8 @@ type (
 	PileupResp struct {
 		Location *dna.Location `json:"location"`
 		//Info      []*mutations.MutationDBInfo `json:"info"`
-		Samples   int                     `json:"samples"`
-		Mutations [][]*mutations.Mutation `json:"mutations"`
+		Samples   int              `json:"samples"`
+		Mutations [][]*wgs.Variant `json:"mutations"`
 	}
 
 	MafResp struct {
@@ -61,7 +62,7 @@ func MutationDatasetsRoute(c *gin.Context) {
 	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *token.AuthUserJwtClaims) {
 		assembly := c.Param("assembly")
 
-		datasets, err := mutationdb.Datasets(assembly, isAdmin, user.Permissions)
+		datasets, err := wgsdb.Datasets(assembly, isAdmin, user.Permissions)
 
 		if err != nil {
 			c.Error(err)
@@ -100,7 +101,7 @@ func PileupRoute(c *gin.Context) {
 		// 	ret.Mutations[i] = make([]*mutations.Mutation, 0, 10)
 		// }
 
-		search, err := mutationdb.Search(assembly,
+		search, err := wgsdb.Search(assembly,
 			location,
 			params.Datasets,
 			isAdmin,
@@ -112,7 +113,7 @@ func PileupRoute(c *gin.Context) {
 			return
 		}
 
-		pileup, err := mutations.GetPileup(search)
+		pileup, err := wgs.GetPileup(search)
 
 		if err != nil {
 			c.Error(err)
@@ -138,7 +139,7 @@ func MutationsRoute(c *gin.Context) {
 
 		location := params.Locations[0]
 
-		search, err := mutationdb.Search(assembly,
+		search, err := wgsdb.Search(assembly,
 			location,
 			params.Datasets,
 			isAdmin,

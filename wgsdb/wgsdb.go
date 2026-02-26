@@ -1,28 +1,28 @@
-package mutationdb
+package wgsdb
 
 import (
 	"sync"
 
 	"github.com/antonybholmes/go-dna"
-	"github.com/antonybholmes/go-mutations"
+	wgs "github.com/antonybholmes/go-wgs"
 )
 
-var instance *mutations.MutationsDB
+var instance *wgs.WGSDB
 var once sync.Once
 
-func InitMutationDB(dir string) (*mutations.MutationsDB, error) {
+func InitDB(dir string) (*wgs.WGSDB, error) {
 	once.Do(func() {
-		instance = mutations.NewMutationsDB(dir)
+		instance = wgs.NewWGSDB(dir)
 	})
 
 	return instance, nil
 }
 
-func GetInstance() *mutations.MutationsDB {
+func GetInstance() *wgs.WGSDB {
 	return instance
 }
 
-func Datasets(assembly string, isAdmin bool, permissions []string) ([]*mutations.Dataset, error) {
+func Datasets(assembly string, isAdmin bool, permissions []string) ([]*wgs.Dataset, error) {
 	return instance.Datasets(assembly, isAdmin, permissions)
 }
 
@@ -34,6 +34,6 @@ func Dir() string {
 // 	return instance.Dataset(datasetId, isAdmin, permissions)
 // }
 
-func Search(assembly string, location *dna.Location, publicIds []string, isAdmin bool, permissions []string) (*mutations.SearchResults, error) {
+func Search(assembly string, location *dna.Location, publicIds []string, isAdmin bool, permissions []string) (*wgs.SearchResults, error) {
 	return instance.Search(assembly, location, publicIds, isAdmin, permissions)
 }
