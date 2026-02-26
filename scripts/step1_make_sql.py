@@ -115,7 +115,56 @@ CHR_MAP = {
     "Mouse": {chr: idx + 1 for idx, chr in enumerate(MOUSE_CHRS)},
 }
 
-dir = f"../data/modules/mutations"
+official_symbols = {"human": {}, "mouse": {}}
+
+gene_ids = {"human": [], "mouse": []}
+gene_id_map = {"human": {}, "mouse": {}}
+prev_gene_id_map = {"human": {}, "mouse": {}}
+alias_gene_id_map = {"human": {}, "mouse": {}}
+
+metadata_map = {}
+
+# gene_db_map = {}
+
+file = (
+    "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/references/hugo/hugo_20240524.tsv"
+)
+df_hugo = pd.read_csv(file, sep="\t", header=0, keep_default_na=False)
+
+gene_index = 1
+
+official_symbols = {"human": {}, "mouse": {}}
+gene_id_map = {"human": {}, "mouse": {}}
+
+for i, gene_symbol in enumerate(df_hugo["Approved symbol"].values):
+
+    # genes = [gene_id] + list(
+    #     filter(
+    #         lambda x: x != "",
+    #         [x.strip() for x in df_hugo["Previous symbols"].values[i].split(",")],
+    #     )
+    # )
+
+    hugo = df_hugo["HGNC ID"].values[i]
+    ensembl = df_hugo["Ensembl gene ID"].values[i].split(".")[0]
+    refseq = df_hugo["RefSeq IDs"].values[i].replace(" ", "")
+    ncbi = df_hugo["NCBI Gene ID"].values[i].replace(" ", "")
+
+    info = {
+        "index": gene_index,
+        "gene_id": hugo,
+        "gene_symbol": gene_symbol,
+        "ensembl": ensembl,
+        "refseq": refseq,
+        "ncbi": ncbi,
+    }
+
+    official_symbols["human"][hugo] = info
+    gene_id_map["human"][gene_symbol.lower()] = hugo
+    gene_index += 1
+
+
+dir = f"../data/modules/wgs"
 
 file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/DLBCL_Master_121625.xlsx"
 
@@ -126,10 +175,10 @@ df_samples = pd.read_excel(
 # force sample id to be string
 df_samples["Sample ID"] = df_samples["Sample ID"].astype(str)
 
-sample_map = {
-    sample: {"index": i + 1, "public_id": str(uuid.uuid7())}
-    for i, sample in enumerate(df_samples["Sample ID"].values)
-}
+# sample_map = {
+#     sample: {"index": i + 1, "public_id": str(uuid.uuid7())}
+#     for i, sample in enumerate(df_samples["Sample ID"].values)
+# }
 
 
 # for i, dataset in enumerate(datasets):
@@ -220,6 +269,49 @@ cursor.execute(
 
 assembly_map = {"hg19": 1, "GRCh38": 2, "GRCm39": 3}
 
+
+cursor.execute(
+    f"""
+    CREATE TABLE genes (
+        id INTEGER PRIMARY KEY,
+        public_id TEXT NOT NULL UNIQUE,
+        genome_id INTEGER NOT NULL,
+        gene_id TEXT NOT NULL,
+        ensembl TEXT NOT NULL DEFAULT '',
+        refseq TEXT NOT NULL DEFAULT '',
+        ncbi INTEGER NOT NULL DEFAULT 0,
+        gene_symbol TEXT NOT NULL DEFAULT '',
+        FOREIGN KEY(genome_id) REFERENCES genomes(id));
+    """,
+)
+
+genomes = ["human"]
+
+
+for si, g in enumerate(genomes):
+    genome_id = genome_map[g]
+    for id in sorted(official_symbols[g.lower()]):
+        d = official_symbols[g.lower()][id]
+
+        cursor.execute(
+            f"INSERT INTO genes (id, public_id, genome_id, gene_id, ensembl, refseq, ncbi, gene_symbol) VALUES (:id, :public_id, :genome_id, :gene_id, :ensembl, :refseq, :ncbi, :gene_symbol);",
+            (
+                {
+                    "id": d["index"],
+                    "public_id": str(uuid.uuid7()),
+                    "genome_id": genome_id,
+                    "gene_id": d["gene_id"],
+                    "ensembl": d["ensembl"],
+                    "refseq": d["refseq"],
+                    "ncbi": d["ncbi"],
+                    "gene_symbol": d["gene_symbol"],
+                }
+            ),
+        )
+
+cursor.execute("COMMIT;")
+
+
 cursor.execute(
     f"""
     CREATE TABLE institutions (
@@ -238,6 +330,29 @@ cursor.execute(
 )
 
 institution_map = {"columbia": 1, "bcca": 2}
+
+
+cursor.execute(
+    f"""
+    CREATE TABLE variant_types (
+        id INTEGER PRIMARY KEY,
+        public_id TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL UNIQUE);
+    """,
+)
+cursor.execute("CREATE INDEX idx_variant_types_name ON variant_types(LOWER(name));")
+
+cursor.execute(
+    f"INSERT INTO variant_types (id, public_id, name) VALUES (1, '{uuid.uuid7()}', 'SNV');"
+)
+cursor.execute(
+    f"INSERT INTO variant_types (id, public_id, name) VALUES (2, '{uuid.uuid7()}', 'INS');"
+)
+cursor.execute(
+    f"INSERT INTO variant_types (id, public_id, name) VALUES (3, '{uuid.uuid7()}', 'DEL');"
+)
+
+variant_type_map = {"SNV": 1, "INS": 2, "DEL": 3}
 
 
 cursor.execute(
@@ -379,29 +494,53 @@ cursor.execute(
 )
 
 cursor.execute(
-    f""" CREATE TABLE mutations (
+    f""" CREATE TABLE variants (
     id INTEGER PRIMARY KEY,
-    sample_id INTEGER NOT NULL,
-    hugo_gene_symbol TEXT NOT NULL DEFAULT '',
     chr_id INTEGER NOT NULL,
+    gene_id INTEGER,
+    variant_type_id INTEGER NOT NULL,
     start INTEGER NOT NULL,
     end INTEGER NOT NULL,
     ref TEXT NOT NULL,
     tum TEXT NOT NULL,
-    t_alt_count INTEGER NOT NULL DEFAULT -1,
-    t_depth INTEGER NOT NULL DEFAULT -1,
-    vaf FLOAT NOT NULL DEFAULT -1,
-    FOREIGN KEY(sample_id) REFERENCES samples(id),
-    FOREIGN KEY(chr_id) REFERENCES chromosomes(id)
+    FOREIGN KEY(chr_id) REFERENCES chromosomes(id),
+    FOREIGN KEY(gene_id) REFERENCES genes(id),
+    FOREIGN KEY(variant_type_id) REFERENCES variant_types(id)
     );
     """
 )
+
 cursor.execute(
-    f"""CREATE INDEX idx_mutations_chr_id_start_end ON mutations (chr_id, start, end);"""
+    f"""CREATE INDEX idx_variants_chr_id_start_end ON variants (chr_id, start, end);"""
 )
+
 cursor.execute(
-    f"""CREATE INDEX idx_mutations_gene_symbol ON mutations (LOWER(hugo_gene_symbol)); """
+    f"""CREATE INDEX idx_variants_variant_type_id ON variants (variant_type_id);"""
 )
+
+cursor.execute(f"""CREATE INDEX idx_variants_gene_id ON variants (gene_id);""")
+
+
+cursor.execute(
+    f""" CREATE TABLE sample_variants (
+    dataset_id INTEGER NOT NULL,
+    sample_id INTEGER NOT NULL,
+    variant_id INTEGER NOT NULL,
+    t_alt_count INTEGER NOT NULL DEFAULT -1,
+    t_depth INTEGER NOT NULL DEFAULT -1,
+    vaf FLOAT NOT NULL DEFAULT -1,
+    PRIMARY KEY (dataset_id, sample_id, variant_id),
+    FOREIGN KEY(dataset_id) REFERENCES datasets(id),
+    FOREIGN KEY(sample_id) REFERENCES samples(id),
+    FOREIGN KEY(variant_id) REFERENCES variants(id)
+    );
+    """
+)
+
+
+# cursor.execute(
+#     f"""CREATE INDEX idx_mutations_gene_symbol ON mutations (LOWER(hugo_gene_symbol)); """
+# )
 
 # cursor.execute(
 #     f""" CREATE TABLE sample_mutations (
@@ -473,10 +612,11 @@ for di, dataset in enumerate(datasets):
 
         if sample not in sample_map:
             sample_map[sample] = len(sample_map) + 1
-            df_samples_d = df_samples[df_samples["Sample ID"] == sample]
+
             sample_index = sample_map[sample]
             sample_id = str(uuid.uuid7())
 
+            df_samples_d = df_samples[df_samples["Sample ID"] == sample]
             print(sample, df_samples_d)
 
             coo = df_samples_d["COO class"].values[0]
@@ -510,8 +650,22 @@ for di, dataset in enumerate(datasets):
         end = dfd["End_Position"].values[i]
         ref = dfd["Reference_Allele"].values[i]
         tum = dfd["Tumor_Seq_Allele2"].values[i]
+        gene = dfd["Hugo_Symbol"].values[i]
         vaf = dfd["VAF"].values[i]
         db = dfd["Dataset"].values[i]
+
+        # default to assuming no gene found
+        gene_id = "NULL"
+
+        for g in gene.split(";"):
+            if g != "":
+                gene_id = gene_id_map[genome.lower()].get(g.lower(), -1)
+
+                if gene_id != -1:
+                    # print(f"Gene: {g}, Gene ID: {gene_id}", "dataset", dataset)
+
+                    gene_id = official_symbols[genome.lower()][gene_id]["index"]
+                    break
 
         if vaf == "na":
             vaf = -1
@@ -544,13 +698,62 @@ for di, dataset in enumerate(datasets):
                 snps.append(
                     {"start": start_i, "end": end_i, "ref": ref_i, "tum": tum_i}
                 )
+
+            variant_type = "SNV"
         else:
             snps.append({"start": start, "end": end, "ref": ref, "tum": tum})
 
-        for snp in snps:
-            # so we can merge mutations from different tables, use the public_id as foreign key
+            if ref[0] == "-":
+                variant_type = "INS"
+            elif tum[0] == "-":
+                variant_type = "DEL"
+            else:
+                variant_type = "MNV"
+
+        if variant_type not in variant_type_map:
+            print(variant_type)
+            variant_type_id = len(variant_type_map) + 1
+            variant_type_map[variant_type] = variant_type_id
             cursor.execute(
-                f"INSERT INTO mutations (sample_id, chr_id, start, end, ref, tum, t_alt_count, t_depth, vaf) VALUES ({sample_index}, {chr_id}, {snp['start']}, {snp['end']}, '{snp['ref']}', '{snp['tum']}', {t_alt_count}, {t_depth}, {vaf});",
+                f"INSERT INTO variant_types (id, public_id, name) VALUES ({variant_type_id}, '{uuid.uuid7()}', '{variant_type}');"
+            )
+
+        variant_type_id = variant_type_map[variant_type]
+
+        for snp in snps:
+            # we unique mutations by their genomic location and change to reduce repeats
+            mutation_key = "|".join(
+                [
+                    str(chr_id),
+                    str(variant_type_id),
+                    str(gene_id),
+                    str(snp["start"]),
+                    str(snp["end"]),
+                    snp["ref"],
+                    snp["tum"],
+                ]
+            )
+
+            if mutation_key not in mutation_map:
+                mutation_index = len(mutation_map) + 1
+                mutation_map[mutation_key] = mutation_index
+
+                cursor.execute(
+                    f"INSERT INTO variants (id, chr_id, variant_type_id, gene_id, start, end, ref, tum) VALUES ({mutation_index}, {chr_id}, {variant_type_id}, {gene_id}, {snp['start']}, {snp['end']}, '{snp['ref']}', '{snp['tum']}');"
+                )
+
+            mutation_index = mutation_map[mutation_key]
+
+            # so we can merge mutations from different tables, use the public_id as foreign key
+
+            cursor.execute(
+                f"""INSERT INTO sample_variants (dataset_id, sample_id, variant_id, t_alt_count, t_depth, vaf) VALUES (
+                {dataset_index}, 
+                {sample_index}, 
+                {mutation_index}, 
+                {t_alt_count}, 
+                {t_depth}, 
+                {vaf}) ON CONFLICT DO NOTHING;"""
             )
 
 

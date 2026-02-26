@@ -64,17 +64,18 @@ type (
 	}
 
 	Mutation struct {
-		Dataset string  `json:"dataset"`
-		Sample  string  `json:"sample"`
-		Chr     string  `json:"chr"`
-		Ref     string  `json:"ref"`
-		Tum     string  `json:"tum"`
-		Type    string  `json:"type"`
-		Start   int     `json:"start"`
-		End     int     `json:"end"`
-		Alt     int     `json:"tAltCount"`
-		Depth   int     `json:"tDepth"`
-		Vaf     float64 `json:"vaf"`
+		Dataset    string  `json:"dataset"`
+		Sample     string  `json:"sample"`
+		Chr        string  `json:"chr"`
+		Ref        string  `json:"ref"`
+		Tum        string  `json:"tum"`
+		GeneSymbol string  `json:"geneSymbol"`
+		Type       string  `json:"type"`
+		Start      int     `json:"start"`
+		End        int     `json:"end"`
+		Alt        int     `json:"tAltCount"`
+		Depth      int     `json:"tDepth"`
+		Vaf        float64 `json:"vaf"`
 	}
 
 	DatasetResults struct {
@@ -115,7 +116,6 @@ const (
 		s.lymphgen_class,
 		s.paired_normal_dna
 		FROM datasets d
-		
 		JOIN assemblies a ON d.assembly_id = a.id
 		JOIN genomes g ON a.genome_id = g.id
 		JOIN institutions ins ON d.institution_id = ins.id
@@ -164,21 +164,25 @@ const (
 	// 	WHERE sm.sample_id = :sample_id
 	// 	ORDER BY md.name`
 
-	FindMutationsSql = `SELECT
+	FindMutationsSql = `SELECT DISTINCT
 		d.public_id AS dataset_id,
 		s.public_id AS sample_id,
-		c.name, 
+		c.name AS chr, 
 		m.start, 
-		m.end, 
+		m.end,
 		m.ref, 
 		m.tum, 
-		m.t_alt_count, 
-		m.t_depth, 
-		m.variant_type,
-		m.vaf
-		FROM mutations m
+		vt.name AS variant_type,
+		COALESCE(g.gene_symbol, '') AS gene_symbol,
+		sm.t_alt_count, 
+		sm.t_depth, 
+		sm.vaf
+		FROM sample_mutations sm
+		JOIN mutations m ON sm.mutation_id = m.id
 		JOIN chromosomes c ON c.id = m.chr_id
-		JOIN samples s ON m.sample_id = s.id
+		JOIN variant_types vt ON vt.id = m.variant_type_id
+		LEFT JOIN genes g ON g.id = m.gene_id
+		JOIN samples s ON sm.sample_id = s.id
 		JOIN datasets d ON s.dataset_id = d.id
 		JOIN dataset_permissions dp ON s.dataset_id = dp.dataset_id
 		JOIN permissions p ON dp.permission_id = p.id
@@ -186,7 +190,7 @@ const (
 			<<PERMISSIONS>>
 			AND <<DATASETS>>
 			AND c.name = :chr AND m.start >= :start AND  m.end <= :end
-		ORDER BY d.public_id, c.name, m.start, m.end, m.variant_type`
+		ORDER BY d.name, c.name, m.start, m.end, vt.name`
 )
 
 func MakeInDatasetsSql(query string, datasetIds []string, namedArgs *[]any) string {
@@ -330,9 +334,10 @@ func (mdb *MutationsDB) Search(assembly string,
 			&mutation.End,
 			&mutation.Ref,
 			&mutation.Tum,
+			&mutation.Type,
+			&mutation.GeneSymbol,
 			&mutation.Alt,
 			&mutation.Depth,
-			&mutation.Type,
 			&mutation.Vaf,
 		)
 
@@ -369,7 +374,7 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 			case "DEL":
 				mutation.Type = "3:DEL"
 			default:
-				mutation.Type = "1:SNP"
+				mutation.Type = "1:SNV"
 			}
 		}
 	}
