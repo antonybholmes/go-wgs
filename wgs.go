@@ -164,33 +164,33 @@ const (
 	// 	WHERE sm.sample_id = :sample_id
 	// 	ORDER BY md.name`
 
-	FindMutationsSql = `SELECT DISTINCT
+	FindVariantsSql = `SELECT DISTINCT
 		d.public_id AS dataset_id,
 		s.public_id AS sample_id,
 		c.name AS chr, 
-		m.start, 
-		m.end,
-		m.ref, 
-		m.tum, 
+		v.start, 
+		v.end,
+		v.ref, 
+		v.tum, 
 		vt.name AS variant_type,
 		COALESCE(g.gene_symbol, '') AS gene_symbol,
-		sm.t_alt_count, 
-		sm.t_depth, 
-		sm.vaf
-		FROM sample_mutations sm
-		JOIN mutations m ON sm.mutation_id = m.id
-		JOIN chromosomes c ON c.id = m.chr_id
-		JOIN variant_types vt ON vt.id = m.variant_type_id
-		LEFT JOIN genes g ON g.id = m.gene_id
-		JOIN samples s ON sm.sample_id = s.id
+		sv.t_alt_count, 
+		sv.t_depth, 
+		sv.vaf
+		FROM sample_variants sv
+		JOIN variants v ON sv.variant_id = v.id
+		JOIN chromosomes c ON c.id = v.chr_id
+		JOIN variant_types vt ON vt.id = v.variant_type_id
+		LEFT JOIN genes g ON g.id = v.gene_id
+		JOIN samples s ON sv.sample_id = s.id
 		JOIN datasets d ON s.dataset_id = d.id
 		JOIN dataset_permissions dp ON s.dataset_id = dp.dataset_id
 		JOIN permissions p ON dp.permission_id = p.id
 		WHERE
 			<<PERMISSIONS>>
 			AND <<DATASETS>>
-			AND c.name = :chr AND m.start >= :start AND  m.end <= :end
-		ORDER BY d.name, c.name, m.start, m.end, vt.name`
+			AND c.name = :chr AND v.start >= :start AND  v.end <= :end
+		ORDER BY d.name, c.name, v.start, v.end, vt.name`
 )
 
 func MakeInDatasetsSql(query string, datasetIds []string, namedArgs *[]any) string {
@@ -306,7 +306,7 @@ func (mdb *WGSDB) Search(assembly string,
 		sql.Named("start", location.Start()),
 		sql.Named("end", location.End())}
 
-	query := sqlite.MakePermissionsSql(FindMutationsSql, isAdmin, permissions, &namedArgs)
+	query := sqlite.MakePermissionsSql(FindVariantsSql, isAdmin, permissions, &namedArgs)
 
 	query = MakeInDatasetsSql(query, datasetIds, &namedArgs)
 
