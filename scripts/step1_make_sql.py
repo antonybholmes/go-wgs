@@ -210,7 +210,7 @@ metadata_map = {meta: mi + 1 for mi, meta in enumerate(metadata)}
 # if not os.path.exists(dataset_dir):
 #    os.makedirs(dataset_dir)
 
-db = os.path.join(dir, f"mutations.db")
+db = os.path.join(dir, f"wgs.db")
 
 print(db)
 
@@ -343,16 +343,25 @@ cursor.execute(
 cursor.execute("CREATE INDEX idx_variant_types_name ON variant_types(LOWER(name));")
 
 cursor.execute(
-    f"INSERT INTO variant_types (id, public_id, name) VALUES (1, '{uuid.uuid7()}', 'SNV');"
-)
-cursor.execute(
-    f"INSERT INTO variant_types (id, public_id, name) VALUES (2, '{uuid.uuid7()}', 'INS');"
-)
-cursor.execute(
-    f"INSERT INTO variant_types (id, public_id, name) VALUES (3, '{uuid.uuid7()}', 'DEL');"
+    f"INSERT INTO variant_types (id, public_id, name) VALUES (1, '{uuid.uuid7()}', 'DEL');"
 )
 
-variant_type_map = {"SNV": 1, "INS": 2, "DEL": 3}
+cursor.execute(
+    f"INSERT INTO variant_types (id, public_id, name) VALUES (2, '{uuid.uuid7()}', 'SNV');"
+)
+
+cursor.execute(
+    f"INSERT INTO variant_types (id, public_id, name) VALUES (3, '{uuid.uuid7()}', 'MNV');"
+)
+
+# it must be last so allow other records to be added before it
+cursor.execute(
+    f"INSERT INTO variant_types (id, public_id, name) VALUES (100, '{uuid.uuid7()}', 'INS');"
+)
+
+# deletions should be ranked before SNVs and insertions for display
+# purposes
+variant_type_map = {"DEL": 1, "SNV": 2, "MNV": 3, "INS": 100}
 
 
 cursor.execute(

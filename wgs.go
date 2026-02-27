@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"slices"
-	"sort"
 	"strings"
 
 	"github.com/antonybholmes/go-dna"
@@ -76,6 +74,7 @@ type (
 		Alt        int     `json:"tAltCount"`
 		Depth      int     `json:"tDepth"`
 		Vaf        float64 `json:"vaf"`
+		Y          int     `json:"y"` // fast access for plotting
 	}
 
 	DatasetResults struct {
@@ -84,14 +83,21 @@ type (
 	}
 
 	PileupResults struct {
-		Location *dna.Location `json:"location"`
-		Datasets []string      `json:"datasets"`
-		Pileup   [][]*Variant  `json:"pileup"`
+		Location *dna.Location     `json:"location"`
+		Datasets []string          `json:"datasets"`
+		Pileup   []*PileupLocation `json:"pileup"`
+	}
+
+	PileupLocation struct {
+		Start    int        `json:"start"`
+		Pos      int        `json:"pos"`
+		Variants []*Variant `json:"variants"`
 	}
 
 	SearchResults struct {
-		Location       *dna.Location     `json:"location"`
-		DatasetResults []*DatasetResults `json:"results"`
+		Location *dna.Location `json:"location"`
+		//DatasetResults []*DatasetResults `json:"results"`
+		Variants []*Variant `json:"variants"`
 	}
 
 	WGSDB struct {
@@ -173,7 +179,7 @@ const (
 		v.ref, 
 		v.tum, 
 		vt.name AS variant_type,
-		COALESCE(g.gene_symbol, '') AS gene_symbol,
+		'' AS gene_symbol,
 		sv.t_alt_count, 
 		sv.t_depth, 
 		sv.vaf
@@ -181,7 +187,6 @@ const (
 		JOIN variants v ON sv.variant_id = v.id
 		JOIN chromosomes c ON c.id = v.chr_id
 		JOIN variant_types vt ON vt.id = v.variant_type_id
-		LEFT JOIN genes g ON g.id = v.gene_id
 		JOIN samples s ON sv.sample_id = s.id
 		JOIN datasets d ON s.dataset_id = d.id
 		JOIN dataset_permissions dp ON s.dataset_id = dp.dataset_id
@@ -189,8 +194,8 @@ const (
 		WHERE
 			<<PERMISSIONS>>
 			AND <<DATASETS>>
-			AND c.name = :chr AND v.start >= :start AND  v.end <= :end
-		ORDER BY d.name, c.name, v.start, v.end, vt.name`
+			AND c.name = :chr AND v.start >= :start AND v.end <= :end
+		ORDER BY vt.id, v.start, d.name`
 )
 
 func MakeInDatasetsSql(query string, datasetIds []string, namedArgs *[]any) string {
@@ -207,15 +212,17 @@ func MakeInDatasetsSql(query string, datasetIds []string, namedArgs *[]any) stri
 
 func (mutation *Variant) Clone() *Variant {
 	var ret Variant = Variant{Chr: mutation.Chr,
-		Start:  mutation.Start,
-		End:    mutation.End,
-		Ref:    mutation.Ref,
-		Tum:    mutation.Tum,
-		Alt:    mutation.Alt,
-		Depth:  mutation.Depth,
-		Type:   mutation.Type,
-		Vaf:    mutation.Vaf,
-		Sample: mutation.Sample,
+		Start:   mutation.Start,
+		End:     mutation.End,
+		Ref:     mutation.Ref,
+		Tum:     mutation.Tum,
+		Alt:     mutation.Alt,
+		Depth:   mutation.Depth,
+		Type:    mutation.Type,
+		Vaf:     mutation.Vaf,
+		Sample:  mutation.Sample,
+		Dataset: mutation.Dataset,
+		Y:       mutation.Y,
 	}
 
 	return &ret
@@ -299,7 +306,6 @@ func (mdb *WGSDB) Search(assembly string,
 	datasetIds []string,
 	isAdmin bool,
 	permissions []string) (*SearchResults, error) {
-	results := SearchResults{Location: location, DatasetResults: make([]*DatasetResults, 0, len(datasetIds))}
 
 	namedArgs := []any{
 		sql.Named("chr", location.Chr()),
@@ -321,24 +327,30 @@ func (mdb *WGSDB) Search(assembly string,
 
 	defer rows.Close()
 
-	var currentDatasetResults *DatasetResults
+	results := SearchResults{
+		Location: location,
+		Variants: make([]*Variant, 0, 100),
+		//DatasetResults: make([]*DatasetResults, 0, 100)
+	}
+
+	//var currentDatasetResults *DatasetResults
 
 	for rows.Next() {
-		var mutation Variant
+		var variant Variant
 
 		err := rows.Scan(
-			&mutation.Dataset,
-			&mutation.Sample,
-			&mutation.Chr,
-			&mutation.Start,
-			&mutation.End,
-			&mutation.Ref,
-			&mutation.Tum,
-			&mutation.Type,
-			&mutation.GeneSymbol,
-			&mutation.Alt,
-			&mutation.Depth,
-			&mutation.Vaf,
+			&variant.Dataset,
+			&variant.Sample,
+			&variant.Chr,
+			&variant.Start,
+			&variant.End,
+			&variant.Ref,
+			&variant.Tum,
+			&variant.Type,
+			&variant.GeneSymbol,
+			&variant.Alt,
+			&variant.Depth,
+			&variant.Vaf,
 		)
 
 		//log.Debug().Msgf("found mutation %v", mutation)
@@ -348,13 +360,13 @@ func (mdb *WGSDB) Search(assembly string,
 		}
 
 		// since ordered by dataset we can group here
-		if currentDatasetResults == nil || currentDatasetResults.Dataset != mutation.Dataset {
-			// create a new stores for this dataset and set to current
-			currentDatasetResults = &DatasetResults{Dataset: mutation.Dataset, Variants: make([]*Variant, 0, 100)}
-			results.DatasetResults = append(results.DatasetResults, currentDatasetResults)
-		}
+		// if currentDatasetResults == nil || currentDatasetResults.Dataset != variant.Dataset {
+		// 	// create a new stores for this dataset and set to current
+		// 	currentDatasetResults = &DatasetResults{Dataset: variant.Dataset, Variants: make([]*Variant, 0, 100)}
+		// 	results.DatasetResults = append(results.DatasetResults, currentDatasetResults)
+		// }
 
-		currentDatasetResults.Variants = append(currentDatasetResults.Variants, &mutation)
+		results.Variants = append(results.Variants, &variant)
 	}
 
 	return &results, nil
@@ -362,136 +374,227 @@ func (mdb *WGSDB) Search(assembly string,
 
 func GetPileup(search *SearchResults) (*PileupResults, error) {
 	// first lets fix deletions and insertions
-	for _, datasetResults := range search.DatasetResults {
-		for _, mutation := range datasetResults.Variants {
-			// change for sorting purposes so that ins always comes last
-			switch mutation.Type {
-			case "INS":
-				mutation.Type = "2:INS"
-				// modify the output so that is begins with a caret to indicate
-				// an insertion
-				mutation.Tum = fmt.Sprintf("^%s", mutation.Tum)
-			case "DEL":
-				mutation.Type = "3:DEL"
-			default:
-				mutation.Type = "1:SNV"
-			}
-		}
-	}
+	// for _, datasetResults := range search.DatasetResults {
+	// 	for _, mutation := range datasetResults.Variants {
+	// 		// change for sorting purposes so that ins always comes last
+	// 		switch mutation.Type {
+	// 		case "INS":
+	// 			mutation.Type = "2:INS"
+	// 			// modify the output so that is begins with a caret to indicate
+	// 			// an insertion
+	// 			mutation.Tum = fmt.Sprintf("^%s", mutation.Tum)
+	// 		case "DEL":
+	// 			mutation.Type = "3:DEL"
+	// 		default:
+	// 			mutation.Type = "1:SNV"
+	// 		}
+	// 	}
+	// }
+
+	// need to find max end
+	location := search.Location
+
+	start := location.Start()
+	end := location.End()
 
 	// put together by position, type, tum
 
-	pileupMap := make(map[int]map[string]map[string][]*Variant)
+	yMap := make(map[int]int)
+	//pileupMap := make(map[int]map[string]map[string][]*Variant)
 
-	for _, datasetResults := range search.DatasetResults {
-		for _, mutation := range datasetResults.Variants {
-
-			mutation.Dataset = datasetResults.Dataset
-
-			switch mutation.Type {
-			case "3:DEL":
-				for i := range mutation.End - mutation.Start + 1 {
-					addToPileupMap(mutation.Start+i, mutation, &pileupMap)
-				}
-			case "2:INS":
-				addToPileupMap(mutation.Start, mutation, &pileupMap)
-			default:
-				// deal with concatenated snps e.g. ACG>TGT
-				//tum := []rune(mutation.Tum)
-				for i, c := range mutation.Tum {
-					// clone and change tumor
-					mut2 := mutation.Clone()
-					mut2.Tum = string(c)
-					addToPileupMap(mut2.Start+i, mut2, &pileupMap)
-				}
-			}
-		}
-	}
-
-	location := search.Location
+	datasets := sys.NewStringSet()
 
 	// init pileup
-	pileup := make([][]*Variant, location.Len())
+	pileup := make([]*PileupLocation, location.Len())
 
 	for i := range location.Len() {
-		pileup[i] = []*Variant{}
+		pileup[i] = &PileupLocation{Start: location.Start() + i, Pos: i, Variants: make([]*Variant, 0, 100)}
 	}
 
-	// get sorted start positions
-	starts := make([]int, 0, len(pileupMap))
+	y := -1
+	newY := -1
 
-	for start := range pileupMap {
-		starts = append(starts, start)
-	}
+	//the relative position from target start
+	pos := -1
 
-	slices.Sort(starts)
+	for _, variant := range search.Variants {
+		switch variant.Type {
+		case "DEL":
+			y = -1
+			for i := range variant.End - variant.Start + 1 {
+				p := variant.Start + i
+				pos = p - start
 
-	// assemble pileups on each start location
-	for _, start := range starts {
-		// sort variant types
-		variantTypes := make([]string, 0, len(pileupMap[start]))
-
-		for variantType := range pileupMap[start] {
-			variantTypes = append(variantTypes, variantType)
-		}
-
-		sort.Strings(variantTypes)
-
-		for _, variantType := range variantTypes {
-			// sort variant change
-			tumors := make([]string, 0, len(pileupMap[start][variantType]))
-
-			for tumor := range pileupMap[start][variantType] {
-				tumors = append(tumors, tumor)
-			}
-
-			sort.Strings(tumors)
-
-			for _, tumor := range tumors {
-				mutations := pileupMap[start][variantType][tumor]
-
-				for _, mutation := range mutations {
-					offset := start - location.Start()
-
-					pileup[offset] = append(pileup[offset], mutation)
+				if p < start || p > end {
+					continue
 				}
+
+				// since we are in position order,
+				// find the next height slot for this
+				// entry
+				if y == -1 {
+					y, newY = nextYSlot(pos, yMap)
+				}
+
+				log.Debug().Msgf("next y slot for idx %d: %d", pos, y)
+
+				yMap[pos] = newY
+
+				pileup = addToPileup(pos, variant, y, pileup)
 			}
+
+		case "INS":
+			pos = variant.Start - start
+			y, _ = nextYSlot(pos, yMap)
+			pileup = addToPileup(pos, variant, y, pileup)
+		default:
+			// deal with concatenated snps e.g. ACG>TGT
+			//tum := []rune(mutation.Tum)
+			y = -1
+			for i, c := range variant.Tum {
+				// clone and change tumor
+				mut2 := variant.Clone()
+				mut2.Tum = string(c)
+				mut2.Type = "SNV"
+				p := mut2.Start + i
+				pos = p - start
+
+				if p < start || p > end {
+					continue
+				}
+
+				if y == -1 {
+					y, newY = nextYSlot(pos, yMap)
+				}
+
+				// update the yMap with the new value so that
+				// things won't start below existing entries
+				yMap[pos] = newY
+
+				pileup = addToPileup(pos, mut2, y, pileup)
+			}
+
+		}
+
+		datasets.Add(variant.Dataset)
+	}
+
+	// keep only positions with something in them
+	filtered := make([]*PileupLocation, 0, len(pileup))
+
+	for _, loc := range pileup {
+		if len(loc.Variants) > 0 {
+			filtered = append(filtered, loc)
 		}
 	}
 
-	// extract the datasets on which dataframe we are using
-	datasets := make([]string, 0, len(search.DatasetResults))
+	// init pileup
+	// pileup := make([][]*Variant, location.Len())
 
-	for _, results := range search.DatasetResults {
-		datasets = append(datasets, results.Dataset)
-	}
+	// for i := range location.Len() {
+	// 	pileup[i] = []*Variant{}
+	// }
 
-	return &PileupResults{Location: location, Datasets: datasets, Pileup: pileup}, nil
+	// // get sorted start positions
+	// starts := make([]int, 0, len(pileupMap))
+
+	// for start := range pileupMap {
+	// 	starts = append(starts, start)
+	// }
+
+	// slices.Sort(starts)
+
+	// // assemble pileups on each start location
+	// for _, start := range starts {
+	// 	// sort variant types
+	// 	variantTypes := make([]string, 0, len(pileupMap[start]))
+
+	// 	for variantType := range pileupMap[start] {
+	// 		variantTypes = append(variantTypes, variantType)
+	// 	}
+
+	// 	sort.Strings(variantTypes)
+
+	// 	for _, variantType := range variantTypes {
+	// 		// sort variant change
+	// 		tumors := make([]string, 0, len(pileupMap[start][variantType]))
+
+	// 		for tumor := range pileupMap[start][variantType] {
+	// 			tumors = append(tumors, tumor)
+	// 		}
+
+	// 		sort.Strings(tumors)
+
+	// 		for _, tumor := range tumors {
+	// 			mutations := pileupMap[start][variantType][tumor]
+
+	// 			for _, mutation := range mutations {
+	// 				offset := start - location.Start()
+
+	// 				pileup[offset] = append(pileup[offset], mutation)
+	// 			}
+	// 		}
+	// 	}
+	// }
+
+	// // extract the datasets on which dataframe we are using
+
+	// // for _, results := range search.DatasetResults {
+	// // 	datasets.Add(results.Dataset)
+	// // }
+
+	return &PileupResults{Location: location, Datasets: datasets.SortedKeys(), Pileup: filtered}, nil
 }
 
-func addToPileupMap(start int,
-	mutation *Variant,
-	pileupMap *map[int]map[string]map[string][]*Variant) {
+func nextYSlot(pos int, yMap map[int]int) (int, int) {
+	y, ok := yMap[pos]
 
-	_, ok := (*pileupMap)[start]
+	if ok {
+		yMap[pos] += 1
+		return y, yMap[pos]
 
-	if !ok {
-		(*pileupMap)[start] = make(map[string]map[string][]*Variant)
 	}
 
-	_, ok = (*pileupMap)[start][mutation.Type]
+	// so that entries start from 0 hence
+	// if entry not found we set to -1 so
+	// that -1 + 1 = 0
+	yMap[pos] = 1
 
-	if !ok {
-		(*pileupMap)[start][mutation.Type] = make(map[string][]*Variant)
-	}
+	return 0, 1
+}
 
-	_, ok = (*pileupMap)[start][mutation.Type][mutation.Tum]
+func addToPileup(
+	pos int,
+	variant *Variant,
+	y int,
+	pileup []*PileupLocation,
+) []*PileupLocation {
 
-	if !ok {
-		(*pileupMap)[start][mutation.Type][mutation.Tum] = make([]*Variant, 0, 100)
-	}
+	variant.Y = y
 
-	(*pileupMap)[start][mutation.Type][mutation.Tum] = append((*pileupMap)[start][mutation.Type][mutation.Tum], mutation)
+	pileup[pos].Variants = append(pileup[pos].Variants, variant)
+
+	// _, ok = (*pileupMap)[start]
+
+	// if !ok {
+	// 	(*pileupMap)[start] = make(map[string]map[string][]*Variant)
+	// }
+
+	// _, ok = (*pileupMap)[start][variant.Type]
+
+	// if !ok {
+	// 	(*pileupMap)[start][variant.Type] = make(map[string][]*Variant)
+	// }
+
+	// _, ok = (*pileupMap)[start][variant.Type][variant.Tum]
+
+	// if !ok {
+	// 	(*pileupMap)[start][variant.Type][variant.Tum] = make([]*Variant, 0, 100)
+	// }
+
+	// (*pileupMap)[start][variant.Type][variant.Tum] = append((*pileupMap)[start][variant.Type][variant.Tum], variant)
+
+	return pileup
 }
 
 // func rowsToMutations(rows *sql.Rows) ([]*Mutation, error) {
