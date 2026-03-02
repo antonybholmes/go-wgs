@@ -89,9 +89,9 @@ type (
 	}
 
 	PileupLocation struct {
+		Variants []*Variant `json:"variants"`
 		Start    int        `json:"start"`
 		Pos      int        `json:"pos"`
-		Variants []*Variant `json:"variants"`
 	}
 
 	SearchResults struct {

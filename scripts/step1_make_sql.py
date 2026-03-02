@@ -343,25 +343,25 @@ cursor.execute(
 cursor.execute("CREATE INDEX idx_variant_types_name ON variant_types(LOWER(name));")
 
 cursor.execute(
-    f"INSERT INTO variant_types (id, public_id, name) VALUES (1, '{uuid.uuid7()}', 'DEL');"
+    f"INSERT INTO variant_types (id, public_id, name) VALUES (100, '{uuid.uuid7()}', 'DEL');"
 )
 
 cursor.execute(
-    f"INSERT INTO variant_types (id, public_id, name) VALUES (2, '{uuid.uuid7()}', 'SNV');"
+    f"INSERT INTO variant_types (id, public_id, name) VALUES (200, '{uuid.uuid7()}', 'SNV');"
 )
 
-cursor.execute(
-    f"INSERT INTO variant_types (id, public_id, name) VALUES (3, '{uuid.uuid7()}', 'MNV');"
-)
+# cursor.execute(
+#     f"INSERT INTO variant_types (id, public_id, name) VALUES (300, '{uuid.uuid7()}', 'MNV');"
+# )
 
 # it must be last so allow other records to be added before it
 cursor.execute(
-    f"INSERT INTO variant_types (id, public_id, name) VALUES (100, '{uuid.uuid7()}', 'INS');"
+    f"INSERT INTO variant_types (id, public_id, name) VALUES (300, '{uuid.uuid7()}', 'INS');"
 )
 
 # deletions should be ranked before SNVs and insertions for display
 # purposes
-variant_type_map = {"DEL": 1, "SNV": 2, "MNV": 3, "INS": 100}
+variant_type_map = {"DEL": 100, "SNV": 200, "INS": 300}
 
 
 cursor.execute(
@@ -717,7 +717,9 @@ for di, dataset in enumerate(datasets):
             elif tum[0] == "-":
                 variant_type = "DEL"
             else:
-                variant_type = "MNV"
+                # print(f"Unknown variant type for ref: {ref}, tum: {tum} {start}")
+                variant_type = "SNV"
+                # sys.exit(1)
 
         if variant_type not in variant_type_map:
             print(variant_type)
