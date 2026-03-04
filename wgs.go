@@ -92,6 +92,8 @@ type (
 		Variants []*Variant `json:"variants"`
 		Start    int        `json:"start"`
 		Pos      int        `json:"pos"`
+		// keep track of max y at position
+		y int `json:"-"`
 	}
 
 	SearchResults struct {
@@ -399,23 +401,23 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 
 	// put together by position, type, tum
 
-	yMap := make(map[int]int)
+	//yMap := make(map[int]int)
 	//pileupMap := make(map[int]map[string]map[string][]*Variant)
 
 	datasets := sys.NewStringSet()
 
-	// init pileup
-	pileup := make([]*PileupLocation, location.Len())
+	// init pileups
+	pileups := make([]*PileupLocation, location.Len())
 
 	for i := range location.Len() {
-		pileup[i] = &PileupLocation{Start: location.Start() + i, Pos: i, Variants: make([]*Variant, 0, 100)}
+		pileups[i] = &PileupLocation{Start: location.Start() + i, Pos: i, Variants: make([]*Variant, 0, 100)}
 	}
 
 	y := -1
-	newY := -1
 
 	//the relative position from target start
 	pos := -1
+	var pileup *PileupLocation
 
 	for _, variant := range search.Variants {
 		switch variant.Type {
@@ -429,24 +431,28 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 					continue
 				}
 
+				pileup = pileups[pos]
+
 				// since we are in position order,
 				// find the next height slot for this
 				// entry
-				if y == -1 {
-					y, newY = nextYSlot(pos, yMap)
+				if i == 0 {
+					pileups[pos], y = nextYSlot(pileup)
+				} else {
+					// update every position of deletion to have
+					// new y of start so that deletion will remain
+					// on its own row with no break
+					pileups[pos].y = pileups[pos-1].y
 				}
 
-				log.Debug().Msgf("next y slot for idx %d: %d", pos, y)
-
-				yMap[pos] = newY
-
-				pileup = addToPileup(pos, variant, y, pileup)
+				pileups[pos] = addToPileup(variant, y, pileup)
 			}
 
 		case "INS":
 			pos = variant.Start - start
-			y, _ = nextYSlot(pos, yMap)
-			pileup = addToPileup(pos, variant, y, pileup)
+			pileup = pileups[pos]
+			pileups[pos], y = nextYSlot(pileup)
+			pileups[pos] = addToPileup(variant, y, pileup)
 		default:
 			// deal with concatenated snps e.g. ACG>TGT
 			//tum := []rune(mutation.Tum)
@@ -463,15 +469,18 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 					continue
 				}
 
-				if y == -1 {
-					y, newY = nextYSlot(pos, yMap)
+				pileup = pileups[pos]
+
+				if i == 0 {
+					pileups[pos], y = nextYSlot(pileup)
+				} else {
+					// update every position of deletion to have
+					// new y of start so that deletion will remain
+					// on its own row with no break
+					pileups[pos].y = pileups[pos-1].y
 				}
 
-				// update the yMap with the new value so that
-				// things won't start below existing entries
-				yMap[pos] = newY
-
-				pileup = addToPileup(pos, mut2, y, pileup)
+				pileups[pos] = addToPileup(mut2, y, pileup)
 			}
 
 		}
@@ -480,9 +489,9 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 	}
 
 	// keep only positions with something in them
-	filtered := make([]*PileupLocation, 0, len(pileup))
+	filtered := make([]*PileupLocation, 0, len(pileups))
 
-	for _, loc := range pileup {
+	for _, loc := range pileups {
 		if len(loc.Variants) > 0 {
 			filtered = append(filtered, loc)
 		}
@@ -546,33 +555,22 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 	return &PileupResults{Location: location, Datasets: datasets.SortedKeys(), Pileup: filtered}, nil
 }
 
-func nextYSlot(pos int, yMap map[int]int) (int, int) {
-	y, ok := yMap[pos]
+func nextYSlot(pileup *PileupLocation) (*PileupLocation, int) {
+	y := pileup.y
+	pileup.y += 1
 
-	if ok {
-		yMap[pos] += 1
-		return y, yMap[pos]
-
-	}
-
-	// so that entries start from 0 hence
-	// if entry not found we set to -1 so
-	// that -1 + 1 = 0
-	yMap[pos] = 1
-
-	return 0, 1
+	return pileup, y
 }
 
 func addToPileup(
-	pos int,
 	variant *Variant,
 	y int,
-	pileup []*PileupLocation,
-) []*PileupLocation {
+	pileup *PileupLocation,
+) *PileupLocation {
 
 	variant.Y = y
 
-	pileup[pos].Variants = append(pileup[pos].Variants, variant)
+	pileup.Variants = append(pileup.Variants, variant)
 
 	// _, ok = (*pileupMap)[start]
 
