@@ -512,6 +512,10 @@ cursor.execute(
     end INTEGER NOT NULL,
     ref TEXT NOT NULL,
     tum TEXT NOT NULL,
+    hgvs_c               TEXT NOT NULL DEFAULT "",               -- coding HGVS notation
+    hgvs_p               TEXT NOT NULL DEFAULT "",               -- protein HGVS notation
+    consequence          TEXT NOT NULL DEFAULT "",               -- missense, frameshift, etc.
+    clinical_significance TEXT NOT NULL DEFAULT "",              -- Pathogenic, VUS, Benign...
     FOREIGN KEY(chr_id) REFERENCES chromosomes(id),
     FOREIGN KEY(gene_id) REFERENCES genes(id),
     FOREIGN KEY(variant_type_id) REFERENCES variant_types(id)
@@ -529,6 +533,27 @@ cursor.execute(
 
 cursor.execute(f"""CREATE INDEX idx_variants_gene_id ON variants (gene_id);""")
 
+
+cursor.execute(
+    f"""CREATE TABLE annotation (
+  id             INTEGER  PRIMARY KEY,
+  variant_id     INTEGER  NOT NULL REFERENCES variants(id),
+  source         TEXT     NOT NULL,  -- ClinVar, gnomAD, SIFT...
+  source_version TEXT,               -- 2024-01, v4.0...
+  key            TEXT     NOT NULL,  -- e.g. CLNSIG, sift_score
+  value          TEXT     NOT NULL,
+
+  UNIQUE (variant_id, source, key)
+);"""
+)
+
+cursor.execute(
+    f"""CREATE INDEX idx_annotation_variant ON annotation (variant_id, LOWER(source));"""
+)
+
+cursor.execute(
+    f"""CREATE INDEX idx_annotation_variant_source_key ON annotation (variant_id, LOWER(source), LOWER(key));"""
+)
 
 cursor.execute(
     f""" CREATE TABLE sample_variants (
@@ -662,6 +687,9 @@ for di, dataset in enumerate(datasets):
         gene = dfd["Hugo_Symbol"].values[i]
         vaf = dfd["VAF"].values[i]
         db = dfd["Dataset"].values[i]
+        hgvs_c = dfd["DNAChange"].values[i]
+        hgvs_p = dfd["AAChange"].values[i]
+        consequence = dfd["Consequence"].values[i]
 
         # default to assuming no gene found
         gene_id = "NULL"

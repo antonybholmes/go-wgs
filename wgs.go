@@ -232,7 +232,7 @@ func (mutation *Variant) Clone() *Variant {
 
 func NewWGSDB(dir string) *WGSDB {
 
-	db := sys.Must(sql.Open(sys.Sqlite3DB, filepath.Join(dir, "wgs.db"+sys.SqliteReadOnlySuffix)))
+	db := sys.Must(sql.Open(sys.Sqlite3DB, filepath.Join(dir, "wgs.db"+sys.SqliteDSN)))
 
 	return &WGSDB{dir: dir, db: db}
 }
