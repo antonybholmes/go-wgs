@@ -32,24 +32,31 @@ datasets = [
         "public_id": str(uuid.uuid7()),
     },
     {
-        "name": "29 cell lines",
-        "short_name": "29cl",
-        "size": 29,
+        "name": "93 Discovery",
+        "short_name": "93discovery",
+        "size": 93,
         "institution": "Columbia",
         "index": 3,
         "public_id": str(uuid.uuid7()),
     },
     {
+        "name": "29 cell lines",
+        "short_name": "29cl",
+        "size": 29,
+        "institution": "Columbia",
+        "index": 4,
+        "public_id": str(uuid.uuid7()),
+    },
+    {
         "name": "BCCA 150 primary 2024",
-        "short_name": "bcca2024",
+        "short_name": "bcca2024-16se",
         "size": 150,
         "institution": "BCCA",
-        "index": 4,
+        "index": 5,
         "public_id": str(uuid.uuid7()),
     },
 ]
 
-idMap = {"20_icg": "20icg", "29_cell_lines": "29cl", "73_bcca": "73primary"}
 
 renameMap = {
     "20_icg": "20 ICG",
@@ -470,17 +477,15 @@ cursor.execute(
     f""" CREATE TABLE samples (
     id INTEGER PRIMARY KEY,
     public_id TEXT NOT NULL UNIQUE,
-    dataset_id INTEGER NOT NULL,
     name TEXT NOT NULL,
     coo TEXT NOT NULL DEFAULT "",
     lymphgen_class TEXT NOT NULL DEFAULT "",
     paired_normal_dna TEXT NOT NULL DEFAULT "",
-    type TEXT NOT NULL DEFAULT "",
-    FOREIGN KEY(dataset_id) REFERENCES datasets(id)
+    type TEXT NOT NULL DEFAULT ""
     );
     """
 )
-cursor.execute("CREATE INDEX idx_samples_dataset_id ON samples (dataset_id);")
+
 cursor.execute("CREATE INDEX idx_samples_name ON samples (LOWER(name));")
 
 cursor.execute(
@@ -501,6 +506,27 @@ cursor.execute(
 cursor.execute(
     "CREATE INDEX idx_sample_metadata_metadata_id ON sample_metadata (metadata_id);"
 )
+
+
+# a sample can be in multiple datasets, so we need a many-to-many relationship
+cursor.execute(
+    f""" CREATE TABLE dataset_samples (
+    dataset_id INTEGER NOT NULL,
+    sample_id INTEGER NOT NULL,
+    PRIMARY KEY (dataset_id, sample_id),
+    FOREIGN KEY(dataset_id) REFERENCES datasets(id),
+    FOREIGN KEY(sample_id) REFERENCES samples(id)
+    );
+    """
+)
+
+cursor.execute(
+    "CREATE INDEX idx_dataset_samples_dataset_id ON dataset_samples (dataset_id);"
+)
+cursor.execute(
+    "CREATE INDEX idx_dataset_samples_sample_id ON dataset_samples (sample_id);"
+)
+
 
 cursor.execute(
     f""" CREATE TABLE variants (
@@ -664,8 +690,18 @@ for di, dataset in enumerate(datasets):
             sample_type = df_samples_d["Sample type"].values[0]
 
             cursor.execute(
-                f"INSERT INTO samples (id, public_id, dataset_id, name, coo, lymphgen_class, paired_normal_dna, type) VALUES ({sample_index}, '{sample_id}', {dataset_index}, '{sample}', '{coo}', '{lymphgen}', '{paired}', '{sample_type}') ON CONFLICT DO NOTHING;",
+                f"INSERT INTO samples (id, public_id, name, coo, lymphgen_class, paired_normal_dna, type) VALUES ({sample_index}, '{sample_id}', '{sample}', '{coo}', '{lymphgen}', '{paired}', '{sample_type}') ON CONFLICT DO NOTHING;",
             )
+
+            cursor.execute(
+                f"INSERT INTO dataset_samples (dataset_id, sample_id) VALUES ({dataset_index}, {sample_index}) ON CONFLICT DO NOTHING;",
+            )
+
+            if dataset_index == 1 or dataset_index == 2:
+                # sample is also added to the 93 discovery dataset
+                cursor.execute(
+                    f"INSERT INTO dataset_samples (dataset_id, sample_id) VALUES (3, {sample_index}) ON CONFLICT DO NOTHING;",
+                )
 
         sample_index = sample_map[sample]
 

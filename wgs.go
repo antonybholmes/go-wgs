@@ -203,8 +203,9 @@ const (
 		JOIN chromosomes c ON c.id = v.chr_id
 		JOIN variant_types vt ON vt.id = v.variant_type_id
 		JOIN samples s ON sv.sample_id = s.id
-		JOIN datasets d ON s.dataset_id = d.id
-		JOIN dataset_permissions dp ON s.dataset_id = dp.dataset_id
+		JOIN dataset_samples ds ON s.id = ds.sample_id
+		JOIN datasets d ON ds.dataset_id = d.id
+		JOIN dataset_permissions dp ON d.id = dp.dataset_id
 		JOIN permissions p ON dp.permission_id = p.id
 		WHERE
 			<<PERMISSIONS>>
