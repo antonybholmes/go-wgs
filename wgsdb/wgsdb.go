@@ -34,6 +34,6 @@ func Dir() string {
 // 	return instance.Dataset(datasetId, isAdmin, permissions)
 // }
 
-func Search(assembly string, location *dna.Location, publicIds []string, isAdmin bool, permissions []string) (*wgs.SearchResults, error) {
+func Search(assembly string, location *dna.Location, publicIds []string, isAdmin bool, permissions []string) ([]*wgs.Variant, error) {
 	return instance.Search(assembly, location, publicIds, isAdmin, permissions)
 }

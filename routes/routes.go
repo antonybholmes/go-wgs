@@ -4,7 +4,6 @@ import (
 	"github.com/antonybholmes/go-dna"
 	"github.com/antonybholmes/go-wgs/wgsdb"
 
-	"github.com/antonybholmes/go-sys/log"
 	"github.com/antonybholmes/go-web"
 	"github.com/antonybholmes/go-web/auth/token"
 	"github.com/antonybholmes/go-web/middleware"
@@ -58,7 +57,7 @@ func ParseParamsFromPost(c *gin.Context) (*MutationParams, error) {
 	return &MutationParams{locations, locs.Datasets}, nil
 }
 
-func MutationDatasetsRoute(c *gin.Context) {
+func VariantDatasetsRoute(c *gin.Context) {
 	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *token.AuthUserJwtClaims) {
 		assembly := c.Param("assembly")
 
@@ -74,59 +73,14 @@ func MutationDatasetsRoute(c *gin.Context) {
 }
 
 func PileupRoute(c *gin.Context) {
-	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *token.AuthUserJwtClaims) {
-
-		assembly := c.Param("assembly")
-
-		params, err := ParseParamsFromPost(c)
-
-		if err != nil {
-			c.Error(err)
-			return
-		}
-
-		//log.Debug().Msgf("pileup: %v %v", params, user.Permissions)
-
-		location := params.Locations[0]
-
-		//assembly := c.Query("assembly")
-		//name := c.Param("name")
-
-		// ret := PileupResp{Location: location,
-		// 	// one metadata file for each database requested
-		// 	//Info:      make([]*mutations.MutationDBInfo, len(params.Databases)),
-		// 	Mutations: make([][]*mutations.Mutation, location.Len())}
-
-		// for i := range location.Len() {
-		// 	ret.Mutations[i] = make([]*mutations.Mutation, 0, 10)
-		// }
-
-		search, err := wgsdb.Search(assembly,
-			location,
-			params.Datasets,
-			isAdmin,
-			user.Permissions)
-
-		if err != nil {
-			log.Debug().Msgf("here 1 %s", err)
-			c.Error(err)
-			return
-		}
-
-		pileup, err := wgs.GetPileup(search)
-
-		if err != nil {
-			c.Error(err)
-			return
-		}
-
-		web.MakeDataResp(c, "", pileup)
-	})
-
-	//web.MakeDataResp(c, "", mutationdbcache.GetInstance().List())
+	searchRoute(c, "pileup")
 }
 
-func MutationsRoute(c *gin.Context) {
+func VariantsRoute(c *gin.Context) {
+	searchRoute(c, "variants")
+}
+
+func searchRoute(c *gin.Context, mode string) {
 	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *token.AuthUserJwtClaims) {
 		assembly := c.Query("assembly")
 
@@ -139,7 +93,7 @@ func MutationsRoute(c *gin.Context) {
 
 		location := params.Locations[0]
 
-		search, err := wgsdb.Search(assembly,
+		variants, err := wgsdb.Search(assembly,
 			location,
 			params.Datasets,
 			isAdmin,
@@ -150,24 +104,26 @@ func MutationsRoute(c *gin.Context) {
 			return
 		}
 
-		// if err != nil {
-		// 	return web.ErrorReq(err)
-		// }
+		if mode == "variants" {
+			results := wgs.VariantSearchResults{
+				Location: location,
+				Variants: variants,
+				Datasets: params.Datasets,
+				//DatasetResults: make([]*DatasetResults, 0, 100)
+			}
 
-		// ret := make([]*mutations.SearchResults, len(locations))
+			web.MakeDataResp(c, "", results)
+			return
+		}
 
-		// for i, location := range locations {
-		// 	mutations, err := db.FindMutations(location)
+		pileup, err := wgs.GetPileup(location, params.Datasets, variants)
 
-		// 	if err != nil {
-		// 		return web.ErrorReq(err)
-		// 	}
+		if err != nil {
+			c.Error(err)
+			return
+		}
 
-		// 	ret[i] = mutations
-		// }
-
-		web.MakeDataResp(c, "", search)
-
+		web.MakeDataResp(c, "", pileup)
 	})
 }
 

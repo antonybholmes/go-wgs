@@ -62,19 +62,23 @@ type (
 	}
 
 	Variant struct {
-		Dataset    string  `json:"dataset"`
-		Sample     string  `json:"sample"`
-		Chr        string  `json:"chr"`
-		Ref        string  `json:"ref"`
-		Tum        string  `json:"tum"`
-		GeneSymbol string  `json:"geneSymbol"`
-		Type       string  `json:"type"`
-		Start      int     `json:"start"`
-		End        int     `json:"end"`
-		Alt        int     `json:"tAltCount"`
-		Depth      int     `json:"tDepth"`
-		Vaf        float64 `json:"vaf"`
-		Y          int     `json:"y"` // fast access for plotting
+		Dataset     string  `json:"dataset"`
+		Sample      string  `json:"sample"`
+		Chr         string  `json:"chr"`
+		Ref         string  `json:"ref"`
+		Tum         string  `json:"tum"`
+		GeneSymbol  string  `json:"geneSymbol"`
+		Type        string  `json:"type"` // SNV, DEL, INS
+		Start       int     `json:"start"`
+		End         int     `json:"end"`
+		TRefCount   int     `json:"tRefCount"`
+		TAltCount   int     `json:"tAltCount"`
+		TDepth      int     `json:"tDepth"`
+		HGVSc       string  `json:"hgvsC,omitempty"`
+		HGVSp       string  `json:"hgvsP,omitempty"`
+		Consequence string  `json:"consequence,omitempty"`
+		Vaf         float64 `json:"vaf"`
+		Y           int     `json:"y"` // fast access for plotting
 	}
 
 	DatasetResults struct {
@@ -96,10 +100,15 @@ type (
 		y int `json:"-"`
 	}
 
-	SearchResults struct {
-		Location *dna.Location `json:"location"`
-		//DatasetResults []*DatasetResults `json:"results"`
+	DatasetSearchResults struct {
+		Dataset  string     `json:"dataset"`
 		Variants []*Variant `json:"variants"`
+	}
+
+	VariantSearchResults struct {
+		Location *dna.Location `json:"location"`
+		Datasets []string      `json:"datasets"`
+		Variants []*Variant    `json:"variants"`
 	}
 
 	WGSDB struct {
@@ -182,8 +191,12 @@ const (
 		v.tum, 
 		vt.name AS variant_type,
 		'' AS gene_symbol,
+		sv.t_depth - sv.t_alt_count AS ref_count, 
 		sv.t_alt_count, 
-		sv.t_depth, 
+		sv.t_depth,
+		v.hgvs_c,
+		v.hgvs_p,
+		v.consequence,
 		sv.vaf
 		FROM sample_variants sv
 		JOIN variants v ON sv.variant_id = v.id
@@ -196,7 +209,7 @@ const (
 		WHERE
 			<<PERMISSIONS>>
 			AND <<DATASETS>>
-			AND c.name = :chr AND v.start >= :start AND v.end <= :end
+			AND c.name = :chr AND v.end >= :start AND v.start <= :end
 		ORDER BY vt.id, v.start, d.name`
 )
 
@@ -214,17 +227,18 @@ func MakeInDatasetsSql(query string, datasetIds []string, namedArgs *[]any) stri
 
 func (mutation *Variant) Clone() *Variant {
 	var ret Variant = Variant{Chr: mutation.Chr,
-		Start:   mutation.Start,
-		End:     mutation.End,
-		Ref:     mutation.Ref,
-		Tum:     mutation.Tum,
-		Alt:     mutation.Alt,
-		Depth:   mutation.Depth,
-		Type:    mutation.Type,
-		Vaf:     mutation.Vaf,
-		Sample:  mutation.Sample,
-		Dataset: mutation.Dataset,
-		Y:       mutation.Y,
+		Start:     mutation.Start,
+		End:       mutation.End,
+		Ref:       mutation.Ref,
+		Tum:       mutation.Tum,
+		TRefCount: mutation.TRefCount,
+		TAltCount: mutation.TAltCount,
+		TDepth:    mutation.TDepth,
+		Type:      mutation.Type,
+		Vaf:       mutation.Vaf,
+		Sample:    mutation.Sample,
+		Dataset:   mutation.Dataset,
+		Y:         mutation.Y,
 	}
 
 	return &ret
@@ -307,7 +321,7 @@ func (mdb *WGSDB) Search(assembly string,
 	location *dna.Location,
 	datasetIds []string,
 	isAdmin bool,
-	permissions []string) (*SearchResults, error) {
+	permissions []string) ([]*Variant, error) {
 
 	namedArgs := []any{
 		sql.Named("chr", location.Chr()),
@@ -329,11 +343,7 @@ func (mdb *WGSDB) Search(assembly string,
 
 	defer rows.Close()
 
-	results := SearchResults{
-		Location: location,
-		Variants: make([]*Variant, 0, 100),
-		//DatasetResults: make([]*DatasetResults, 0, 100)
-	}
+	results := make([]*Variant, 0, 100)
 
 	//var currentDatasetResults *DatasetResults
 
@@ -350,8 +360,12 @@ func (mdb *WGSDB) Search(assembly string,
 			&variant.Tum,
 			&variant.Type,
 			&variant.GeneSymbol,
-			&variant.Alt,
-			&variant.Depth,
+			&variant.TRefCount,
+			&variant.TAltCount,
+			&variant.TDepth,
+			&variant.HGVSc,
+			&variant.HGVSp,
+			&variant.Consequence,
 			&variant.Vaf,
 		)
 
@@ -368,13 +382,14 @@ func (mdb *WGSDB) Search(assembly string,
 		// 	results.DatasetResults = append(results.DatasetResults, currentDatasetResults)
 		// }
 
-		results.Variants = append(results.Variants, &variant)
+		results = append(results, &variant)
 	}
 
-	return &results, nil
+	return results, nil
 }
 
-func GetPileup(search *SearchResults) (*PileupResults, error) {
+// Converts a list of variants at a location into pileup format for plotting
+func GetPileup(location *dna.Location, datasets []string, variants []*Variant) (*PileupResults, error) {
 	// first lets fix deletions and insertions
 	// for _, datasetResults := range search.DatasetResults {
 	// 	for _, mutation := range datasetResults.Variants {
@@ -393,9 +408,6 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 	// 	}
 	// }
 
-	// need to find max end
-	location := search.Location
-
 	start := location.Start()
 	end := location.End()
 
@@ -403,8 +415,6 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 
 	//yMap := make(map[int]int)
 	//pileupMap := make(map[int]map[string]map[string][]*Variant)
-
-	datasets := sys.NewStringSet()
 
 	// init pileups
 	pileups := make([]*PileupLocation, location.Len())
@@ -419,7 +429,7 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 	pos := -1
 	var pileup *PileupLocation
 
-	for _, variant := range search.Variants {
+	for _, variant := range variants {
 		switch variant.Type {
 		case "DEL":
 			y = -1
@@ -485,7 +495,6 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 
 		}
 
-		datasets.Add(variant.Dataset)
 	}
 
 	// keep only positions with something in them
@@ -552,7 +561,7 @@ func GetPileup(search *SearchResults) (*PileupResults, error) {
 	// // 	datasets.Add(results.Dataset)
 	// // }
 
-	return &PileupResults{Location: location, Datasets: datasets.SortedKeys(), Pileup: filtered}, nil
+	return &PileupResults{Location: location, Datasets: datasets, Pileup: filtered}, nil
 }
 
 func nextYSlot(pileup *PileupLocation) (*PileupLocation, int) {

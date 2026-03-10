@@ -595,8 +595,8 @@ cursor.execute(
 #     )
 
 genome = "Human"
-file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/bcca2024_73primary_29cl_20icg_hg19/bcca2024_73primary_29cl_20icg_hg19.maf.txt"
-# "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/93primary_29cl_dlbcl_hg19/93primary_29cl_rename_samples_hg19.maf.txt"
+# file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/bcca2024_73primary_29cl_20icg_hg19/bcca2024_73primary_29cl_20icg_hg19.maf.txt"
+file = "/home/antony/development/ngs/wgs/bcca2024/bcca2024-16se_73primary_29cl_20icg_hg19.fixed.maf.txt"
 
 df = pd.read_csv(file, sep="\t", header=0, keep_default_na=False)
 df["Sample"] = df["Sample"].astype(str)
@@ -636,11 +636,11 @@ for di, dataset in enumerate(datasets):
         f"INSERT INTO dataset_permissions (dataset_id, permission_id) VALUES ({dataset_index}, 1);",
     )
 
-    for i in range(dfd.shape[0]):
+    for i, row in dfd.iterrows():
         # mutation_uuid = str(uuid.uuid7())
         # generate("0123456789abcdefghijklmnopqrstuvwxyz", 12)
 
-        sample = dfd["Sample"].values[i]
+        sample = row["Sample"]
         # remove _allele_1 etc from sample name
         sample = re.sub(r"_.+", "", sample)
 
@@ -669,7 +669,7 @@ for di, dataset in enumerate(datasets):
 
         sample_index = sample_map[sample]
 
-        chr = dfd["Chromosome"].values[i]
+        chr = row["Chromosome"]
 
         chr = chr.upper().replace("MT", "M")
         chr = chr.replace("CHR", "")
@@ -680,16 +680,16 @@ for di, dataset in enumerate(datasets):
 
         chr_id = chr_map[genome][chr]
 
-        start = dfd["Start_Position"].values[i]
-        end = dfd["End_Position"].values[i]
-        ref = dfd["Reference_Allele"].values[i]
-        tum = dfd["Tumor_Seq_Allele2"].values[i]
-        gene = dfd["Hugo_Symbol"].values[i]
-        vaf = dfd["VAF"].values[i]
-        db = dfd["Dataset"].values[i]
-        hgvs_c = dfd["DNAChange"].values[i]
-        hgvs_p = dfd["AAChange"].values[i]
-        consequence = dfd["Consequence"].values[i]
+        start = row["Start_Position"]
+        end = row["End_Position"]
+        ref = row["Reference_Allele"]
+        tum = row["Tumor_Seq_Allele2"]
+        gene = row["Hugo_Symbol"]
+        vaf = row["VAF"]
+        db = row["Dataset"]
+        hgvs_c = row["DNAChange"]
+        hgvs_p = row["AAChange"]
+        consequence = row["Variant_Classification"]
 
         # default to assuming no gene found
         gene_id = "NULL"
@@ -709,14 +709,14 @@ for di, dataset in enumerate(datasets):
 
         # variant_type = dfd["Variant_Type"].values[i]
 
-        t_alt_count = dfd["t_alt_count"].values[i]
-        t_depth = dfd["t_depth"].values[i]
+        t_alt_count = row["t_alt_count"]
+        t_depth = row["t_depth"]
 
-        if t_alt_count == "na":
-            t_alt_count = -1
+        # if t_alt_count == "na":
+        #    t_alt_count = -1
 
-        if t_depth == "na":
-            t_depth = -1
+        # if t_depth == "na":
+        #    t_depth = -1
 
         snps = []
 
@@ -778,7 +778,19 @@ for di, dataset in enumerate(datasets):
                 mutation_map[mutation_key] = mutation_index
 
                 cursor.execute(
-                    f"INSERT INTO variants (id, chr_id, variant_type_id, gene_id, start, end, ref, tum) VALUES ({mutation_index}, {chr_id}, {variant_type_id}, {gene_id}, {snp['start']}, {snp['end']}, '{snp['ref']}', '{snp['tum']}');"
+                    f"""INSERT INTO variants (id, chr_id, variant_type_id, gene_id, start, end, ref, tum, hgvs_c, hgvs_p, consequence) VALUES (
+                    {mutation_index}, 
+                    {chr_id}, 
+                    {variant_type_id}, 
+                    {gene_id}, 
+                    {snp['start']}, 
+                    {snp['end']}, 
+                    '{snp['ref']}', 
+                    '{snp['tum']}', 
+                    '{hgvs_c}', 
+                    '{hgvs_p}', 
+                    '{consequence}');
+                    """
                 )
 
             mutation_index = mutation_map[mutation_key]
