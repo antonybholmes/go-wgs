@@ -136,7 +136,8 @@ const (
 		JOIN assemblies a ON d.assembly_id = a.id
 		JOIN genomes g ON a.genome_id = g.id
 		JOIN institutions ins ON d.institution_id = ins.id
-		JOIN samples s ON s.dataset_id = d.id
+		JOIN dataset_samples ds ON d.id = ds.dataset_id
+		JOIN samples s ON s.id = ds.sample_id
 		JOIN dataset_permissions dp ON d.id = dp.dataset_id
 		JOIN permissions p ON dp.permission_id = p.id
 		WHERE 

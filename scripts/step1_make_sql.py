@@ -58,12 +58,6 @@ datasets = [
 ]
 
 
-renameMap = {
-    "20_icg": "20 ICG",
-    "29_cell_lines": "29 cell lines",
-    "73_bcca": "73 primary",
-}
-
 HUMAN_CHRS = [
     "chr1",
     "chr2",
