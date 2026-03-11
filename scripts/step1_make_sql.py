@@ -211,7 +211,7 @@ metadata_map = {meta: mi + 1 for mi, meta in enumerate(metadata)}
 # if not os.path.exists(dataset_dir):
 #    os.makedirs(dataset_dir)
 
-db = os.path.join(dir, f"wgs.db")
+db = os.path.join(dir, f"wgs-20260311.db")
 
 print(db)
 
@@ -221,6 +221,9 @@ if os.path.exists(db):
 conn = sqlite3.connect(db)
 conn.row_factory = sqlite3.Row
 cursor = conn.cursor()
+
+
+cursor.execute("PRAGMA journal_mode = WAL;")
 
 cursor.execute(
     f"""
@@ -480,6 +483,8 @@ cursor.execute(
     """
 )
 
+# not required as unique constraint is on public_id creates index
+# cursor.execute("CREATE INDEX idx_samples_public_id ON samples (public_id);")
 cursor.execute("CREATE INDEX idx_samples_name ON samples (LOWER(name));")
 
 cursor.execute(
@@ -624,7 +629,7 @@ df["Sample"] = df["Sample"].astype(str)
 # sort by Chromosome col
 # df = df.sort_values(by="Chromosome")
 
-mutation_map = {}
+variant_map = {}
 sample_map = {}
 
 for di, dataset in enumerate(datasets):
@@ -687,17 +692,19 @@ for di, dataset in enumerate(datasets):
                 f"INSERT INTO samples (id, public_id, name, coo, lymphgen_class, paired_normal_dna, type) VALUES ({sample_index}, '{sample_id}', '{sample}', '{coo}', '{lymphgen}', '{paired}', '{sample_type}') ON CONFLICT DO NOTHING;",
             )
 
-            cursor.execute(
-                f"INSERT INTO dataset_samples (dataset_id, sample_id) VALUES ({dataset_index}, {sample_index}) ON CONFLICT DO NOTHING;",
-            )
-
-            if dataset_index == 1 or dataset_index == 2:
-                # sample is also added to the 93 discovery dataset
-                cursor.execute(
-                    f"INSERT INTO dataset_samples (dataset_id, sample_id) VALUES (3, {sample_index}) ON CONFLICT DO NOTHING;",
-                )
-
         sample_index = sample_map[sample]
+
+        # map samples to datasets
+
+        cursor.execute(
+            f"INSERT INTO dataset_samples (dataset_id, sample_id) VALUES ({dataset_index}, {sample_index}) ON CONFLICT DO NOTHING;",
+        )
+
+        if dataset_index == 1 or dataset_index == 2:
+            # sample is also added to the 93 discovery dataset if part of the 73 or 20 icg
+            cursor.execute(
+                f"INSERT INTO dataset_samples (dataset_id, sample_id) VALUES (3, {sample_index}) ON CONFLICT DO NOTHING;",
+            )
 
         chr = row["Chromosome"]
 
@@ -726,12 +733,13 @@ for di, dataset in enumerate(datasets):
 
         for g in gene.split(";"):
             if g != "":
-                gene_id = gene_id_map[genome.lower()].get(g.lower(), -1)
+                id = gene_id_map[genome.lower()].get(g.lower(), -1)
 
-                if gene_id != -1:
+                if id != -1:
                     # print(f"Gene: {g}, Gene ID: {gene_id}", "dataset", dataset)
 
-                    gene_id = official_symbols[genome.lower()][gene_id]["index"]
+                    # change gene id from null to the actual gene id, if found
+                    gene_id = official_symbols[genome.lower()][id]["index"]
                     break
 
         if vaf == "na":
@@ -748,7 +756,7 @@ for di, dataset in enumerate(datasets):
         # if t_depth == "na":
         #    t_depth = -1
 
-        snps = []
+        snvs = []
 
         # split concatenated snps
         if len(ref) > 1 and len(tum) > 1 and len(ref) == len(tum):
@@ -762,13 +770,13 @@ for di, dataset in enumerate(datasets):
                 start_i = start + idx
                 end_i = end - (len(ref) - idx - 1)
 
-                snps.append(
+                snvs.append(
                     {"start": start_i, "end": end_i, "ref": ref_i, "tum": tum_i}
                 )
 
             variant_type = "SNV"
         else:
-            snps.append({"start": start, "end": end, "ref": ref, "tum": tum})
+            snvs.append({"start": start, "end": end, "ref": ref, "tum": tum})
 
             if ref[0] == "-":
                 variant_type = "INS"
@@ -789,23 +797,25 @@ for di, dataset in enumerate(datasets):
 
         variant_type_id = variant_type_map[variant_type]
 
-        for snp in snps:
+        for snv in snvs:
             # we unique mutations by their genomic location and change to reduce repeats
-            mutation_key = "|".join(
+            variant_key = "|".join(
                 [
                     str(chr_id),
                     str(variant_type_id),
                     str(gene_id),
-                    str(snp["start"]),
-                    str(snp["end"]),
-                    snp["ref"],
-                    snp["tum"],
+                    str(snv["start"]),
+                    str(snv["end"]),
+                    snv["ref"],
+                    snv["tum"],
+                    hgvs_p,
+                    consequence,
                 ]
             )
 
-            if mutation_key not in mutation_map:
-                mutation_index = len(mutation_map) + 1
-                mutation_map[mutation_key] = mutation_index
+            if variant_key not in variant_map:
+                mutation_index = len(variant_map) + 1
+                variant_map[variant_key] = mutation_index
 
                 cursor.execute(
                     f"""INSERT INTO variants (id, chr_id, variant_type_id, gene_id, start, end, ref, tum, hgvs_c, hgvs_p, consequence) VALUES (
@@ -813,29 +823,37 @@ for di, dataset in enumerate(datasets):
                     {chr_id}, 
                     {variant_type_id}, 
                     {gene_id}, 
-                    {snp['start']}, 
-                    {snp['end']}, 
-                    '{snp['ref']}', 
-                    '{snp['tum']}', 
+                    {snv['start']}, 
+                    {snv['end']}, 
+                    '{snv['ref']}', 
+                    '{snv['tum']}', 
                     '{hgvs_c}', 
                     '{hgvs_p}', 
                     '{consequence}');
                     """
                 )
 
-            mutation_index = mutation_map[mutation_key]
+            mutation_index = variant_map[variant_key]
 
             # so we can merge mutations from different tables, use the public_id as foreign key
 
-            cursor.execute(
-                f"""INSERT INTO sample_variants (dataset_id, sample_id, variant_id, t_alt_count, t_depth, vaf) VALUES (
-                {dataset_index}, 
-                {sample_index}, 
-                {mutation_index}, 
-                {t_alt_count}, 
-                {t_depth}, 
-                {vaf}) ON CONFLICT DO NOTHING;"""
-            )
+            # if we are in the 73 primary or 20 ICG datasets, also add to the 93 discovery dataset
+            if dataset_index == 1 or dataset_index == 2:
+                datasets = [dataset_index, 3]
+            else:
+                # only add variant to the current dataset
+                datasets = [dataset_index]
+
+            for dsi in datasets:
+                cursor.execute(
+                    f"""INSERT INTO sample_variants (dataset_id, sample_id, variant_id, t_alt_count, t_depth, vaf) VALUES (
+                    {dsi}, 
+                    {sample_index}, 
+                    {mutation_index}, 
+                    {t_alt_count}, 
+                    {t_depth}, 
+                    {vaf}) ON CONFLICT DO NOTHING;"""
+                )
 
 
 conn.commit()

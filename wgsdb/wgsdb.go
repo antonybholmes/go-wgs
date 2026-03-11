@@ -10,9 +10,9 @@ import (
 var instance *wgs.WGSDB
 var once sync.Once
 
-func InitDB(dir string) (*wgs.WGSDB, error) {
+func InitDB(file string) (*wgs.WGSDB, error) {
 	once.Do(func() {
-		instance = wgs.NewWGSDB(dir)
+		instance = wgs.NewWGSDB(file)
 	})
 
 	return instance, nil
@@ -26,9 +26,9 @@ func Datasets(assembly string, isAdmin bool, permissions []string) ([]*wgs.Datas
 	return instance.Datasets(assembly, isAdmin, permissions)
 }
 
-func Dir() string {
-	return instance.Dir()
-}
+// func Dir() string {
+// 	return instance.Dir()
+// }
 
 // func Dataset(datasetId string, isAdmin bool, permissions []string) (*mutations.Dataset, error) {
 // 	return instance.Dataset(datasetId, isAdmin, permissions)

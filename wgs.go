@@ -3,7 +3,6 @@ package wgs
 import (
 	"database/sql"
 	"fmt"
-	"path/filepath"
 
 	"strings"
 
@@ -62,23 +61,24 @@ type (
 	}
 
 	Variant struct {
-		Dataset     string  `json:"dataset"`
-		Sample      string  `json:"sample"`
-		Chr         string  `json:"chr"`
-		Ref         string  `json:"ref"`
-		Tum         string  `json:"tum"`
-		GeneSymbol  string  `json:"geneSymbol"`
-		Type        string  `json:"type"` // SNV, DEL, INS
-		Start       int     `json:"start"`
-		End         int     `json:"end"`
-		TRefCount   int     `json:"tRefCount"`
-		TAltCount   int     `json:"tAltCount"`
-		TDepth      int     `json:"tDepth"`
-		HGVSc       string  `json:"hgvsC,omitempty"`
-		HGVSp       string  `json:"hgvsP,omitempty"`
-		Consequence string  `json:"consequence,omitempty"`
-		Vaf         float64 `json:"vaf"`
-		Y           int     `json:"y"` // fast access for plotting
+		Id          int      `json:"-"`
+		Datasets    []string `json:"datasets"`
+		Sample      string   `json:"sample"`
+		Chr         string   `json:"chr"`
+		Ref         string   `json:"ref"`
+		Tum         string   `json:"tum"`
+		GeneSymbol  string   `json:"gene,omitempty"`
+		Type        string   `json:"type"` // SNV, DEL, INS
+		Start       int      `json:"start"`
+		End         int      `json:"end"`
+		TRefCount   int      `json:"tRefCount"`
+		TAltCount   int      `json:"tAltCount"`
+		TDepth      int      `json:"tDepth"`
+		HGVSc       string   `json:"hgvsC,omitempty"`
+		HGVSp       string   `json:"hgvsP,omitempty"`
+		Consequence string   `json:"consequence,omitempty"`
+		Vaf         float64  `json:"vaf"`
+		Y           int      `json:"y"` // fast access for plotting
 	}
 
 	DatasetResults struct {
@@ -112,8 +112,8 @@ type (
 	}
 
 	WGSDB struct {
-		db  *sql.DB
-		dir string
+		db   *sql.DB
+		file string
 	}
 )
 
@@ -182,37 +182,51 @@ const (
 	// 	WHERE sm.sample_id = :sample_id
 	// 	ORDER BY md.name`
 
-	FindVariantsSql = `SELECT DISTINCT
-		d.public_id AS dataset_id,
-		s.public_id AS sample_id,
-		c.name AS chr, 
-		v.start, 
-		v.end,
-		v.ref, 
-		v.tum, 
-		vt.name AS variant_type,
-		'' AS gene_symbol,
-		sv.t_depth - sv.t_alt_count AS ref_count, 
-		sv.t_alt_count, 
-		sv.t_depth,
-		v.hgvs_c,
-		v.hgvs_p,
-		v.consequence,
-		sv.vaf
-		FROM sample_variants sv
-		JOIN variants v ON sv.variant_id = v.id
+	// order by vt.id so that dels are first, then snvs, then ins so that they will be plotted in that order
+	FindVariantsSql = `
+		SELECT DISTINCT
+			v.id as variant_id,
+			c.name AS chr,
+			v.start, 
+			v.end,
+			v.ref, 
+			v.tum,
+			v.hgvs_c,
+			v.hgvs_p,
+			v.consequence,
+			vt.name AS variant_type,
+			COALESCE(g.gene_symbol, '') AS gene_symbol,
+			d.public_id AS dataset,
+			s.public_id AS sample,
+			sv.t_depth - sv.t_alt_count AS ref_count, 
+			sv.t_alt_count, 
+			sv.t_depth,
+			sv.vaf
+		FROM variants v
 		JOIN chromosomes c ON c.id = v.chr_id
 		JOIN variant_types vt ON vt.id = v.variant_type_id
+		JOIN genes g ON v.gene_id = g.id
+		JOIN sample_variants sv ON sv.variant_id = v.id
 		JOIN samples s ON sv.sample_id = s.id
-		JOIN dataset_samples ds ON s.id = ds.sample_id
-		JOIN datasets d ON ds.dataset_id = d.id
+		JOIN datasets d ON sv.dataset_id = d.id
 		JOIN dataset_permissions dp ON d.id = dp.dataset_id
 		JOIN permissions p ON dp.permission_id = p.id
 		WHERE
 			<<PERMISSIONS>>
 			AND <<DATASETS>>
 			AND c.name = :chr AND v.end >= :start AND v.start <= :end
-		ORDER BY vt.id, v.start, d.name`
+		ORDER BY vt.id, v.start, v.id, s.id, d.id
+	`
+
+	// FindSampleDatasetsSql = `
+	// 	SELECT DISTINCT
+	// 		d.name
+	// 	FROM samples s
+	// 	JOIN dataset_samples ds ON s.id = ds.sample_id
+	// 	JOIN datasets d ON ds.dataset_id = d.id
+	// 	WHERE
+	// 		s.id = :sample
+	//`
 )
 
 func MakeInDatasetsSql(query string, datasetIds []string, namedArgs *[]any) string {
@@ -227,42 +241,45 @@ func MakeInDatasetsSql(query string, datasetIds []string, namedArgs *[]any) stri
 	return strings.Replace(query, "<<DATASETS>>", "d.public_id IN ("+strings.Join(inPlaceholders, ",")+")", 1)
 }
 
-func (mutation *Variant) Clone() *Variant {
-	var ret Variant = Variant{Chr: mutation.Chr,
-		Start:     mutation.Start,
-		End:       mutation.End,
-		Ref:       mutation.Ref,
-		Tum:       mutation.Tum,
-		TRefCount: mutation.TRefCount,
-		TAltCount: mutation.TAltCount,
-		TDepth:    mutation.TDepth,
-		Type:      mutation.Type,
-		Vaf:       mutation.Vaf,
-		Sample:    mutation.Sample,
-		Dataset:   mutation.Dataset,
-		Y:         mutation.Y,
+func (variant *Variant) Clone() *Variant {
+	var ret Variant = Variant{
+		Id:         variant.Id,
+		Chr:        variant.Chr,
+		Start:      variant.Start,
+		End:        variant.End,
+		Ref:        variant.Ref,
+		Tum:        variant.Tum,
+		TRefCount:  variant.TRefCount,
+		TAltCount:  variant.TAltCount,
+		GeneSymbol: variant.GeneSymbol,
+		TDepth:     variant.TDepth,
+		Type:       variant.Type,
+		Vaf:        variant.Vaf,
+		Sample:     variant.Sample,
+		Datasets:   variant.Datasets,
+		Y:          variant.Y,
 	}
 
 	return &ret
 }
 
-func NewWGSDB(dir string) *WGSDB {
+func NewWGSDB(file string) *WGSDB {
 
-	db := sys.Must(sql.Open(sys.Sqlite3DB, filepath.Join(dir, "wgs.db"+sys.SqliteDSN)))
+	db := sys.Must(sql.Open(sys.Sqlite3DB, file+sys.SqliteDSN))
 
-	return &WGSDB{dir: dir, db: db}
+	return &WGSDB{file: file, db: db}
 }
 
-func (mdb *WGSDB) Dir() string {
-	return mdb.dir
-}
+// func (mdb *WGSDB) Dir() string {
+// 	return mdb.dir
+// }
 
-func (mdb *WGSDB) Datasets(assembly string, isAdmin bool, permissions []string) ([]*Dataset, error) {
+func (wdb *WGSDB) Datasets(assembly string, isAdmin bool, permissions []string) ([]*Dataset, error) {
 	namedArgs := []any{sql.Named("assembly", web.FormatParam(assembly))}
 
 	query := sqlite.MakePermissionsSql(DatasetsSql, isAdmin, permissions, &namedArgs)
 
-	rows, err := mdb.db.Query(query, namedArgs...)
+	rows, err := wdb.db.Query(query, namedArgs...)
 
 	if err != nil {
 		return nil, err //fmt.Errorf("there was an error with the database query")
@@ -319,7 +336,7 @@ func (mdb *WGSDB) Datasets(assembly string, isAdmin bool, permissions []string) 
 	return ret, nil
 }
 
-func (mdb *WGSDB) Search(assembly string,
+func (wdb *WGSDB) Search(assembly string,
 	location *dna.Location,
 	datasetIds []string,
 	isAdmin bool,
@@ -334,7 +351,7 @@ func (mdb *WGSDB) Search(assembly string,
 
 	query = MakeInDatasetsSql(query, datasetIds, &namedArgs)
 
-	rows, err := mdb.db.Query(query, namedArgs...)
+	rows, err := wdb.db.Query(query, namedArgs...)
 
 	log.Debug().Msgf("querying mutations db with %v %s", isAdmin, query)
 
@@ -349,25 +366,51 @@ func (mdb *WGSDB) Search(assembly string,
 
 	//var currentDatasetResults *DatasetResults
 
+	//v.id as variant_id,
+	// c.name AS chr,
+	// v.start,
+	// v.end,
+	// v.ref,
+	// v.tum,
+	// v.hgvs_c,
+	// v.hgvs_p,
+	// v.consequence,
+	// vt.name AS variant_type,
+	// COALESCE(g.gene_symbol, '') AS gene_symbol,
+	// d.id AS dataset_id,
+	// d.name AS dataset,
+	// s.id as sample_id,
+	// s.name AS sample,
+	// sv.t_depth - sv.t_alt_count AS ref_count,
+	// sv.t_alt_count,
+	// sv.t_depth,
+	// sv.vaf
+
+	var currentVariant *Variant = nil
+
+	var dataset string
+
 	for rows.Next() {
 		var variant Variant
 
 		err := rows.Scan(
-			&variant.Dataset,
-			&variant.Sample,
+			&variant.Id,
 			&variant.Chr,
 			&variant.Start,
 			&variant.End,
 			&variant.Ref,
 			&variant.Tum,
-			&variant.Type,
-			&variant.GeneSymbol,
-			&variant.TRefCount,
-			&variant.TAltCount,
-			&variant.TDepth,
 			&variant.HGVSc,
 			&variant.HGVSp,
 			&variant.Consequence,
+			&variant.Type,
+			&variant.GeneSymbol,
+			&dataset,
+			&variant.Sample,
+			&variant.TRefCount,
+			&variant.TAltCount,
+			&variant.TDepth,
+
 			&variant.Vaf,
 		)
 
@@ -377,6 +420,21 @@ func (mdb *WGSDB) Search(assembly string,
 			return nil, err
 		}
 
+		// if there are multiple datasets for the same variant, they will be grouped together
+		// by keeping the first variant and adding datasets to it as they come in since ordered by dataset
+		// if the variant changes then it must be a new entry however if the variant id stays the same but
+		// sample changes then it is also a new entry since same variant can be in multiple samples but
+		// we want to keep them separate for plotting purposes.
+		if currentVariant == nil || variant.Id != currentVariant.Id || variant.Sample != currentVariant.Sample {
+			currentVariant = &variant
+			results = append(results, currentVariant)
+			currentVariant.Datasets = make([]string, 0, 5)
+
+		}
+
+		// if same variant, just add dataset to list
+		currentVariant.Datasets = append(currentVariant.Datasets, dataset)
+
 		// since ordered by dataset we can group here
 		// if currentDatasetResults == nil || currentDatasetResults.Dataset != variant.Dataset {
 		// 	// create a new stores for this dataset and set to current
@@ -384,11 +442,41 @@ func (mdb *WGSDB) Search(assembly string,
 		// 	results.DatasetResults = append(results.DatasetResults, currentDatasetResults)
 		// }
 
-		results = append(results, &variant)
 	}
 
 	return results, nil
 }
+
+// func (wdb *WGSDB) getDatasetsForSample(sample string) ([]string, error) {
+
+// 	namedArgs := []any{
+// 		sql.Named("sample", sample)}
+
+// 	rows, err := wdb.db.Query(FindSampleDatasetsSql, namedArgs...)
+
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	defer rows.Close()
+
+// 	results := make([]string, 0, 5)
+
+// 	var dataset string
+
+// 	for rows.Next() {
+
+// 		err := rows.Scan(&dataset)
+
+// 		if err != nil {
+// 			return nil, err
+// 		}
+
+// 		results = append(results, dataset)
+// 	}
+
+// 	return results, nil
+// }
 
 // Converts a list of variants at a location into pileup format for plotting
 func GetPileup(location *dna.Location, datasets []string, variants []*Variant) (*PileupResults, error) {
