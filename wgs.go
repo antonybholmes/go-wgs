@@ -78,7 +78,7 @@ type (
 		HGVSp       string   `json:"hgvsP,omitempty"`
 		Consequence string   `json:"consequence,omitempty"`
 		Vaf         float64  `json:"vaf"`
-		Y           int      `json:"y"` // fast access for plotting
+		Y           int      `json:"y,omitempty"` // fast access for plotting
 	}
 
 	DatasetResults struct {
@@ -96,8 +96,8 @@ type (
 		Variants []*Variant `json:"variants"`
 		Start    int        `json:"start"`
 		Pos      int        `json:"pos"`
-		// keep track of max y at position
-		y int `json:"-"`
+		// keep track of max Y at position
+		Y int `json:"-"`
 	}
 
 	DatasetSearchResults struct {
@@ -410,7 +410,6 @@ func (wdb *WGSDB) Search(assembly string,
 			&variant.TRefCount,
 			&variant.TAltCount,
 			&variant.TDepth,
-
 			&variant.Vaf,
 		)
 
@@ -542,7 +541,7 @@ func GetPileup(location *dna.Location, datasets []string, variants []*Variant) (
 					// update every position of deletion to have
 					// new y of start so that deletion will remain
 					// on its own row with no break
-					pileups[pos].y = pileups[pos-1].y
+					pileups[pos].Y = pileups[pos-1].Y
 				}
 
 				pileups[pos] = addToPileup(variant, y, pileup)
@@ -577,7 +576,7 @@ func GetPileup(location *dna.Location, datasets []string, variants []*Variant) (
 					// update every position of deletion to have
 					// new y of start so that deletion will remain
 					// on its own row with no break
-					pileups[pos].y = pileups[pos-1].y
+					pileups[pos].Y = pileups[pos-1].Y
 				}
 
 				pileups[pos] = addToPileup(mut2, y, pileup)
@@ -655,8 +654,8 @@ func GetPileup(location *dna.Location, datasets []string, variants []*Variant) (
 }
 
 func nextYSlot(pileup *PileupLocation) (*PileupLocation, int) {
-	y := pileup.y
-	pileup.y += 1
+	y := pileup.Y
+	pileup.Y += 1
 
 	return pileup, y
 }

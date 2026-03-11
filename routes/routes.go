@@ -104,6 +104,8 @@ func searchRoute(c *gin.Context, mode string) {
 			return
 		}
 
+		//log.Debug().Msgf("mode %s", mode)
+
 		if mode == "variants" {
 			results := wgs.VariantSearchResults{
 				Location: location,
