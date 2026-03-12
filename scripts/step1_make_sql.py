@@ -18,6 +18,7 @@ datasets = [
     {
         "name": "73 primary",
         "short_name": "73primary",
+        "description": "Variants in 73 primary cases.",
         "size": 73,
         "institution": "Columbia",
         "index": 1,
@@ -26,6 +27,7 @@ datasets = [
     {
         "name": "20 ICG",
         "short_name": "20icg",
+        "description": "Variants in 20 ICG cases.",
         "size": 20,
         "institution": "Columbia",
         "index": 2,
@@ -34,6 +36,7 @@ datasets = [
     {
         "name": "93 Discovery",
         "short_name": "93discovery",
+        "description": "The 73primary + 20icg cases used in the Bal Nature paper.",
         "size": 93,
         "institution": "Columbia",
         "index": 3,
@@ -42,17 +45,37 @@ datasets = [
     {
         "name": "29 cell lines",
         "short_name": "29cl",
+        "description": "Variants in 29 DLBCL cell lines.",
         "size": 29,
         "institution": "Columbia",
         "index": 4,
         "public_id": str(uuid.uuid7()),
     },
     {
-        "name": "BCCA 150 primary 2024",
+        "name": "BCCA 2024 16 SE",
         "short_name": "bcca2024-16se",
-        "size": 150,
+        "description": "Variant data from 16 SE regions in the BCCA 2024 dataset.",
+        "size": 222,
         "institution": "BCCA",
         "index": 5,
+        "public_id": str(uuid.uuid7()),
+    },
+    {
+        "name": "WGS 122",
+        "short_name": "122wgs",
+        "description": "The 73primary + 20icg + 29cl cases.",
+        "size": 122,
+        "institution": "Columbia",
+        "index": 6,
+        "public_id": str(uuid.uuid7()),
+    },
+    {
+        "name": "BCCA 2024 150 primary 16 SE",
+        "short_name": "bcca2024-16se-150",
+        "description": "150 primary samples from the BCCA 2024 dataset in 16 SE regions that are not in the 93 discovery dataset.",
+        "size": 150,
+        "institution": "BCCA",
+        "index": 7,
         "public_id": str(uuid.uuid7()),
     },
 ]
@@ -439,7 +462,7 @@ cursor.execute(
     name TEXT NOT NULL,
     short_name TEXT NOT NULL,
     samples INTEGER NOT NULL DEFAULT 0,
-    mutations INTEGER NOT NULL DEFAULT 0,
+    variants INTEGER NOT NULL DEFAULT 0,
     description TEXT NOT NULL DEFAULT "",
     FOREIGN KEY(assembly_id) REFERENCES assemblies(id),
     FOREIGN KEY(institution_id) REFERENCES institutions(id)
@@ -582,20 +605,29 @@ cursor.execute(
 
 cursor.execute(
     f""" CREATE TABLE sample_variants (
-    dataset_id INTEGER NOT NULL,
+    id INTEGER PRIMARY KEY,
     sample_id INTEGER NOT NULL,
     variant_id INTEGER NOT NULL,
     t_alt_count INTEGER NOT NULL DEFAULT -1,
     t_depth INTEGER NOT NULL DEFAULT -1,
     vaf FLOAT NOT NULL DEFAULT -1,
-    PRIMARY KEY (dataset_id, sample_id, variant_id),
-    FOREIGN KEY(dataset_id) REFERENCES datasets(id),
+    UNIQUE (sample_id, variant_id),
     FOREIGN KEY(sample_id) REFERENCES samples(id),
     FOREIGN KEY(variant_id) REFERENCES variants(id)
     );
     """
 )
 
+cursor.execute(
+    f""" CREATE TABLE dataset_sample_variants (
+    dataset_id INTEGER NOT NULL,
+    sample_variant_id INTEGER NOT NULL,
+    PRIMARY KEY (dataset_id, sample_variant_id),
+    FOREIGN KEY(dataset_id) REFERENCES datasets(id),
+    FOREIGN KEY(sample_variant_id) REFERENCES sample_variants(id)
+    );
+    """
+)
 
 # cursor.execute(
 #     f"""CREATE INDEX idx_mutations_gene_symbol ON mutations (LOWER(hugo_gene_symbol)); """
@@ -632,6 +664,8 @@ df["Sample"] = df["Sample"].astype(str)
 variant_map = {}
 sample_map = {}
 
+sample_variant_map = {}
+
 for di, dataset in enumerate(datasets):
     dataset_index = dataset["index"]
     dataset_id = dataset["public_id"]
@@ -639,6 +673,11 @@ for di, dataset in enumerate(datasets):
     name = dataset["name"]
     short_name = dataset["short_name"]
     size = dataset["size"]
+    description = dataset["description"]
+
+    print(
+        f"Processing dataset {dataset_index}: {name} with institution {institution} and size {size}..."
+    )
 
     if institution.lower() not in institution_map:
         idx = len(institution_map) + 1
@@ -649,12 +688,23 @@ for di, dataset in enumerate(datasets):
 
     institution_id = institution_map[institution.lower()]
 
-    dfd = df[df["Dataset"] == short_name]
+    # dfd = df[df["Dataset"].str.split("|").apply(lambda x: short_name in x)]
+    dfd = df[df["Dataset"].str.contains(rf"(^|\|){short_name}(\||$)", regex=True)]
 
-    mutation_counts = dfd.shape[0]
+    variant_count = dfd.shape[0]
 
     cursor.execute(
-        f"INSERT INTO datasets (id, public_id, assembly_id, institution_id, name, short_name, samples, mutations) VALUES ({dataset_index}, '{dataset_id}', {assembly_map[assembly]}, {institution_id}, '{name}', '{short_name}', {size}, {mutation_counts});",
+        f"""INSERT INTO datasets (id, public_id, assembly_id, institution_id, name, short_name, samples, variants, description) VALUES (
+            {dataset_index}, 
+            '{dataset_id}', 
+            {assembly_map[assembly]}, 
+            {institution_id}, 
+            '{name}', 
+            '{short_name}', 
+            {size}, 
+            {variant_count},
+            '{description}');
+        """,
     )
 
     cursor.execute(
@@ -689,7 +739,16 @@ for di, dataset in enumerate(datasets):
             sample_type = df_samples_d["Sample type"].values[0]
 
             cursor.execute(
-                f"INSERT INTO samples (id, public_id, name, coo, lymphgen_class, paired_normal_dna, type) VALUES ({sample_index}, '{sample_id}', '{sample}', '{coo}', '{lymphgen}', '{paired}', '{sample_type}') ON CONFLICT DO NOTHING;",
+                f"""INSERT INTO samples (id, public_id, name, coo, lymphgen_class, paired_normal_dna, type) VALUES (
+                {sample_index}, 
+                '{sample_id}', 
+                '{sample}', 
+                '{coo}', 
+                '{lymphgen}', 
+                '{paired}', 
+                '{sample_type}') 
+                ON CONFLICT DO NOTHING;
+            """,
             )
 
         sample_index = sample_map[sample]
@@ -700,11 +759,11 @@ for di, dataset in enumerate(datasets):
             f"INSERT INTO dataset_samples (dataset_id, sample_id) VALUES ({dataset_index}, {sample_index}) ON CONFLICT DO NOTHING;",
         )
 
-        if dataset_index == 1 or dataset_index == 2:
-            # sample is also added to the 93 discovery dataset if part of the 73 or 20 icg
-            cursor.execute(
-                f"INSERT INTO dataset_samples (dataset_id, sample_id) VALUES (3, {sample_index}) ON CONFLICT DO NOTHING;",
-            )
+        # if dataset_index == 1 or dataset_index == 2:
+        #     # sample is also added to the 93 discovery dataset if part of the 73 or 20 icg
+        #     cursor.execute(
+        #         f"INSERT INTO dataset_samples (dataset_id, sample_id) VALUES (3, {sample_index}) ON CONFLICT DO NOTHING;",
+        #     )
 
         chr = row["Chromosome"]
 
@@ -833,27 +892,45 @@ for di, dataset in enumerate(datasets):
                     """
                 )
 
-            mutation_index = variant_map[variant_key]
+            variant_index = variant_map[variant_key]
 
             # so we can merge mutations from different tables, use the public_id as foreign key
 
             # if we are in the 73 primary or 20 ICG datasets, also add to the 93 discovery dataset
-            if dataset_index == 1 or dataset_index == 2:
-                datasets = [dataset_index, 3]
-            else:
-                # only add variant to the current dataset
-                datasets = [dataset_index]
+            # if dataset_index == 1 or dataset_index == 2:
+            #     datasets = [dataset_index, 3]
+            # else:
+            #     # only add variant to the current dataset
+            #     datasets = [dataset_index]
 
-            for dsi in datasets:
+            # for dsi in datasets:
+
+            sample_variant_key = (
+                f"{sample_index}|{variant_index}|{t_alt_count}|{t_depth}"
+            )
+
+            if sample_variant_key not in sample_variant_map:
+                sample_variant_map[sample_variant_key] = len(sample_variant_map) + 1
+                sample_variant_index = sample_variant_map[sample_variant_key]
                 cursor.execute(
-                    f"""INSERT INTO sample_variants (dataset_id, sample_id, variant_id, t_alt_count, t_depth, vaf) VALUES (
-                    {dsi}, 
+                    f"""INSERT INTO sample_variants (id, sample_id, variant_id, t_alt_count, t_depth, vaf) VALUES (
+                    {sample_variant_index},
                     {sample_index}, 
-                    {mutation_index}, 
+                    {variant_index}, 
                     {t_alt_count}, 
                     {t_depth}, 
-                    {vaf}) ON CONFLICT DO NOTHING;"""
+                    {vaf}) ON CONFLICT DO NOTHING;
+                    """
                 )
+
+            sample_variant_index = sample_variant_map[sample_variant_key]
+
+            cursor.execute(
+                f"""INSERT INTO dataset_sample_variants (dataset_id, sample_variant_id) VALUES (
+                {dataset_index}, 
+                {sample_variant_index}) ON CONFLICT DO NOTHING;
+                """
+            )
 
 
 conn.commit()

@@ -10,7 +10,6 @@ import (
 	"github.com/antonybholmes/go-sys"
 	"github.com/antonybholmes/go-web"
 	"github.com/antonybholmes/go-web/auth/sqlite"
-	"github.com/rs/zerolog/log"
 )
 
 type (
@@ -57,28 +56,28 @@ type (
 		Description string    `json:"description"`
 		File        string    `json:"-"`
 		Samples     []*Sample `json:"samples"`
-		Mutations   int       `json:"mutations"`
+		Variants    int       `json:"variants"`
 	}
 
 	Variant struct {
-		Id          int      `json:"-"`
-		Datasets    []string `json:"datasets"`
+		HGVSc       string   `json:"hgvsC,omitempty"`
 		Sample      string   `json:"sample"`
 		Chr         string   `json:"chr"`
 		Ref         string   `json:"ref"`
 		Tum         string   `json:"tum"`
 		GeneSymbol  string   `json:"gene,omitempty"`
-		Type        string   `json:"type"` // SNV, DEL, INS
+		Type        string   `json:"type"`
+		Consequence string   `json:"consequence,omitempty"`
+		HGVSp       string   `json:"hgvsP,omitempty"`
+		Datasets    []string `json:"datasets"`
 		Start       int      `json:"start"`
-		End         int      `json:"end"`
-		TRefCount   int      `json:"tRefCount"`
 		TAltCount   int      `json:"tAltCount"`
 		TDepth      int      `json:"tDepth"`
-		HGVSc       string   `json:"hgvsC,omitempty"`
-		HGVSp       string   `json:"hgvsP,omitempty"`
-		Consequence string   `json:"consequence,omitempty"`
+		TRefCount   int      `json:"tRefCount"`
+		End         int      `json:"end"`
+		Id          int      `json:"-"`
 		Vaf         float64  `json:"vaf"`
-		Y           int      `json:"y,omitempty"` // fast access for plotting
+		Y           int      `json:"y,omitempty"`
 	}
 
 	DatasetResults struct {
@@ -118,6 +117,8 @@ type (
 )
 
 const (
+	MaxVariants = 1000
+
 	DatasetsSql = `SELECT DISTINCT
 		d.public_id AS dataset_id,
 		g.name AS genome,
@@ -125,7 +126,7 @@ const (
 		ins.name AS institution,
 		d.name,
 		d.short_name,
-		d.mutations,
+		d.variants,
 		d.description,
 		s.public_id AS sample_id,
 		s.name AS sample_name,
@@ -208,7 +209,8 @@ const (
 		JOIN genes g ON v.gene_id = g.id
 		JOIN sample_variants sv ON sv.variant_id = v.id
 		JOIN samples s ON sv.sample_id = s.id
-		JOIN datasets d ON sv.dataset_id = d.id
+		JOIN dataset_sample_variants dsv ON dsv.sample_variant_id = sv.id
+		JOIN datasets d ON dsv.dataset_id = d.id
 		JOIN dataset_permissions dp ON d.id = dp.dataset_id
 		JOIN permissions p ON dp.permission_id = p.id
 		WHERE
@@ -216,6 +218,7 @@ const (
 			AND <<DATASETS>>
 			AND c.name = :chr AND v.end >= :start AND v.start <= :end
 		ORDER BY vt.id, v.start, v.id, s.id, d.id
+		LIMIT :limit
 	`
 
 	// FindSampleDatasetsSql = `
@@ -302,7 +305,7 @@ func (wdb *WGSDB) Datasets(assembly string, isAdmin bool, permissions []string) 
 			&dataset.Institution,
 			&dataset.Name,
 			&dataset.ShortName,
-			&dataset.Mutations,
+			&dataset.Variants,
 			&dataset.Description,
 			&sample.PublicId,
 			&sample.Name,
@@ -345,7 +348,8 @@ func (wdb *WGSDB) Search(assembly string,
 	namedArgs := []any{
 		sql.Named("chr", location.Chr()),
 		sql.Named("start", location.Start()),
-		sql.Named("end", location.End())}
+		sql.Named("end", location.End()),
+		sql.Named("limit", MaxVariants)}
 
 	query := sqlite.MakePermissionsSql(FindVariantsSql, isAdmin, permissions, &namedArgs)
 
@@ -353,10 +357,10 @@ func (wdb *WGSDB) Search(assembly string,
 
 	rows, err := wdb.db.Query(query, namedArgs...)
 
-	log.Debug().Msgf("querying mutations db with %v %s", isAdmin, query)
+	//log.Debug().Msgf("querying mutations db with %v %s", isAdmin, query)
 
 	if err != nil {
-		log.Debug().Msgf("error querying mutations db: %s", err)
+		//log.Debug().Msgf("error querying mutations db: %s", err)
 		return nil, err
 	}
 
