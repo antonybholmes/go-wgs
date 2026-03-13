@@ -502,6 +502,9 @@ func (wdb *WGSDB) Search(assembly string,
 	return results, nil
 }
 
+// MAF returns the minor allele frequency at a location for a set of datasets by counting the number of samples with a mutation at
+// each position and dividing by the total number of alleles in those samples (2 per sample for diploid).
+// This returns the counts and alleles assuming consumer will translate to MAF as needed.
 func (wdb *WGSDB) MAF(assembly string,
 	location *dna.Location,
 	datasetIds []string,
