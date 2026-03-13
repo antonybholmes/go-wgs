@@ -549,7 +549,7 @@ cursor.execute(
     "CREATE INDEX idx_dataset_samples_sample_id ON dataset_samples (sample_id);"
 )
 
-
+#     clinical_significance TEXT NOT NULL DEFAULT "",              -- Pathogenic, VUS, Benign...
 cursor.execute(
     f""" CREATE TABLE variants (
     id INTEGER PRIMARY KEY,
@@ -563,7 +563,6 @@ cursor.execute(
     hgvs_c               TEXT NOT NULL DEFAULT "",               -- coding HGVS notation
     hgvs_p               TEXT NOT NULL DEFAULT "",               -- protein HGVS notation
     consequence          TEXT NOT NULL DEFAULT "",               -- missense, frameshift, etc.
-    clinical_significance TEXT NOT NULL DEFAULT "",              -- Pathogenic, VUS, Benign...
     FOREIGN KEY(chr_id) REFERENCES chromosomes(id),
     FOREIGN KEY(gene_id) REFERENCES genes(id),
     FOREIGN KEY(variant_type_id) REFERENCES variant_types(id)
@@ -590,7 +589,6 @@ cursor.execute(
   source_version TEXT,               -- 2024-01, v4.0...
   key            TEXT     NOT NULL,  -- e.g. CLNSIG, sift_score
   value          TEXT     NOT NULL,
-
   UNIQUE (variant_id, source, key)
 );"""
 )
@@ -786,6 +784,19 @@ for di, dataset in enumerate(datasets):
         hgvs_c = row["DNAChange"]
         hgvs_p = row["AAChange"]
         consequence = row["Variant_Classification"]
+
+        # reduce space by using empty string instead of NA or . for missing values
+        if consequence == "NA" or consequence == ".":
+            consequence = ""
+
+        if hgvs_c == "NA" or hgvs_c == ".":
+            hgvs_c = ""
+
+        if hgvs_p == "NA" or hgvs_p == ".":
+            hgvs_p = ""
+
+        if gene == "NA" or gene == ".":
+            gene = ""
 
         # default to assuming no gene found
         gene_id = "NULL"

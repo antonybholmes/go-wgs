@@ -14,7 +14,6 @@ require (
 	github.com/antonybholmes/go-dna v0.0.0-20260302203000-6aa894cd8cd9
 	github.com/antonybholmes/go-sys v0.0.0-20260302215512-25fe845a717e
 	github.com/gin-gonic/gin v1.12.0
-	github.com/rs/zerolog v1.34.0
 )
 
 require (
@@ -50,12 +49,14 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
 	github.com/redis/go-redis/v9 v9.15.0 // indirect
+	github.com/rs/zerolog v1.34.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	github.com/xyproto/randomstring v1.2.0 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	golang.org/x/arch v0.25.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 

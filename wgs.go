@@ -121,9 +121,9 @@ type (
 	MAFResults struct {
 		Location *dna.Location  `json:"location"`
 		Datasets []string       `json:"datasets"`
+		MAFs     []*MAFLocation `json:"mafs"`
 		Samples  int            `json:"samples"`
 		Alleles  int            `json:"alleles"`
-		MAFs     []*MAFLocation `json:"mafs"`
 	}
 
 	WGSDB struct {
