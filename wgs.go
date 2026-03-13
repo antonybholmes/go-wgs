@@ -10,6 +10,7 @@ import (
 	"github.com/antonybholmes/go-sys"
 	"github.com/antonybholmes/go-web"
 	"github.com/antonybholmes/go-web/auth/sqlite"
+	"github.com/antonybholmes/go-web/auth/token"
 )
 
 type (
@@ -94,7 +95,7 @@ type (
 	PileupLocation struct {
 		Variants []*Variant `json:"variants"`
 		Start    int        `json:"start"`
-		Pos      int        `json:"pos"`
+		Index    int        `json:"index"`
 		// keep track of max Y at position
 		Y int `json:"-"`
 	}
@@ -108,6 +109,19 @@ type (
 		Location *dna.Location `json:"location"`
 		Datasets []string      `json:"datasets"`
 		Variants []*Variant    `json:"variants"`
+	}
+
+	MAFLocation struct {
+		Start int `json:"start"`
+		Index int `json:"index"`
+		// keep track of max Y at position
+		Count int `json:"count"`
+	}
+
+	MAFResults struct {
+		Location *dna.Location  `json:"location"`
+		Datasets []string       `json:"datasets"`
+		MAFs     []*MAFLocation `json:"mafs"`
 	}
 
 	WGSDB struct {
@@ -218,6 +232,28 @@ const (
 			AND <<DATASETS>>
 			AND c.name = :chr AND v.end >= :start AND v.start <= :end
 		ORDER BY vt.id, v.start, v.id, s.id, d.id
+		LIMIT :limit
+	`
+
+	// simpler for counting mutations at each position for maf output
+	// since we don't need all the details just the position and count
+	MAFSql = `
+		SELECT DISTINCT
+			v.start, 
+			v.end
+		FROM variants v
+		JOIN chromosomes c ON c.id = v.chr_id
+		JOIN sample_variants sv ON sv.variant_id = v.id
+		JOIN samples s ON sv.sample_id = s.id
+		JOIN dataset_sample_variants dsv ON dsv.sample_variant_id = sv.id
+		JOIN datasets d ON dsv.dataset_id = d.id
+		JOIN dataset_permissions dp ON d.id = dp.dataset_id
+		JOIN permissions p ON dp.permission_id = p.id
+		WHERE
+			<<PERMISSIONS>>
+			AND <<DATASETS>>
+			AND c.name = :chr AND v.end >= :start AND v.start <= :end
+		ORDER BY v.start
 		LIMIT :limit
 	`
 
@@ -366,7 +402,7 @@ func (wdb *WGSDB) Search(assembly string,
 
 	defer rows.Close()
 
-	results := make([]*Variant, 0, 100)
+	results := make([]*Variant, 0, 200)
 
 	//var currentDatasetResults *DatasetResults
 
@@ -450,6 +486,75 @@ func (wdb *WGSDB) Search(assembly string,
 	return results, nil
 }
 
+func (wdb *WGSDB) MAF(assembly string,
+	location *dna.Location,
+	datasetIds []string,
+	isAdmin bool,
+	user *token.AuthUserJwtClaims) (*MAFResults, error) {
+
+	namedArgs := []any{
+		sql.Named("chr", location.Chr()),
+		sql.Named("start", location.Start()),
+		sql.Named("end", location.End()),
+		sql.Named("limit", MaxVariants)}
+
+	query := sqlite.MakePermissionsSql(MAFSql, isAdmin, user.Permissions, &namedArgs)
+
+	query = MakeInDatasetsSql(query, datasetIds, &namedArgs)
+
+	rows, err := wdb.db.Query(query, namedArgs...)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	var start int
+	var end int
+
+	mafMap := make(map[int]*MAFLocation)
+	mafs := make([]*MAFLocation, 0, 200)
+
+	for rows.Next() {
+
+		err := rows.Scan(
+			&start,
+			&end,
+		)
+
+		//log.Debug().Msgf("found mutation %v", mutation)
+
+		if err != nil {
+			return nil, err
+		}
+
+		// if there are multiple datasets for the same variant, they will be grouped together
+		// by keeping the first variant and adding datasets to it as they come in since ordered by dataset
+		// if the variant changes then it must be a new entry however if the variant id stays the same but
+		// sample changes then it is also a new entry since same variant can be in multiple samples but
+		// we want to keep them separate for plotting purposes.
+
+		for pos := start; pos <= end; pos++ {
+			maf, ok := mafMap[pos]
+
+			// for each position in the variant, add to maf map if not there and then increment count for maf at that position
+			if !ok {
+				maf = &MAFLocation{Start: pos, Index: pos - location.Start(), Count: 0}
+				mafMap[pos] = maf
+				mafs = append(mafs, maf)
+			}
+
+			maf.Count += 1
+		}
+
+	}
+
+	results := MAFResults{Location: location, Datasets: datasetIds, MAFs: mafs}
+
+	return &results, nil
+}
+
 // func (wdb *WGSDB) getDatasetsForSample(sample string) ([]string, error) {
 
 // 	namedArgs := []any{
@@ -513,7 +618,7 @@ func GetPileup(location *dna.Location, datasets []string, variants []*Variant) (
 	pileups := make([]*PileupLocation, location.Len())
 
 	for i := range location.Len() {
-		pileups[i] = &PileupLocation{Start: location.Start() + i, Pos: i, Variants: make([]*Variant, 0, 100)}
+		pileups[i] = &PileupLocation{Start: location.Start() + i, Index: i, Variants: make([]*Variant, 0, 100)}
 	}
 
 	y := -1

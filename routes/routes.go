@@ -129,6 +129,34 @@ func searchRoute(c *gin.Context, mode string) {
 	})
 }
 
+func MAFRoute(c *gin.Context, mode string) {
+	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *token.AuthUserJwtClaims) {
+		assembly := c.Query("assembly")
+
+		params, err := ParseParamsFromPost(c)
+
+		if err != nil {
+			c.Error(err)
+			return
+		}
+
+		location := params.Locations[0]
+
+		mafResults, err := wgsdb.MAF(assembly,
+			location,
+			params.Datasets,
+			isAdmin,
+			user)
+
+		if err != nil {
+			c.Error(err)
+			return
+		}
+
+		web.MakeDataResp(c, "", mafResults)
+	})
+}
+
 // func MafRoute(c *gin.Context) {
 // 	 NewValidator(c).Success(func(validator *Validator) {
 // 		assembly := c.Param("assembly")
