@@ -121,6 +121,8 @@ type (
 	MAFResults struct {
 		Location *dna.Location  `json:"location"`
 		Datasets []string       `json:"datasets"`
+		Samples  int            `json:"samples"`
+		Alleles  int            `json:"alleles"`
 		MAFs     []*MAFLocation `json:"mafs"`
 	}
 
@@ -239,6 +241,8 @@ const (
 	// since we don't need all the details just the position and count
 	MAFSql = `
 		SELECT DISTINCT
+			sv.sample_id AS sample_id,
+			sv.variant_id AS variant_id,
 			v.start, 
 			v.end
 		FROM variants v
@@ -255,6 +259,18 @@ const (
 			AND c.name = :chr AND v.end >= :start AND v.start <= :end
 		ORDER BY v.start
 		LIMIT :limit
+	`
+
+	SampleCountSql = `
+		SELECT COUNT(DISTINCT s.id)
+		FROM samples s
+		JOIN dataset_samples ds ON s.id = ds.sample_id
+		JOIN datasets d ON ds.dataset_id = d.id
+		JOIN dataset_permissions dp ON d.id = dp.dataset_id
+		JOIN permissions p ON dp.permission_id = p.id
+		WHERE
+			<<PERMISSIONS>>
+			AND <<DATASETS>>
 	`
 
 	// FindSampleDatasetsSql = `
@@ -492,13 +508,22 @@ func (wdb *WGSDB) MAF(assembly string,
 	isAdmin bool,
 	user *token.AuthUserJwtClaims) (*MAFResults, error) {
 
-	namedArgs := []any{
+	namedArgs := []any{}
+
+	query := sqlite.MakePermissionsSql(SampleCountSql, isAdmin, user.Permissions, &namedArgs)
+
+	query = MakeInDatasetsSql(query, datasetIds, &namedArgs)
+
+	var samples int
+	err := wdb.db.QueryRow(query, namedArgs...).Scan(&samples)
+
+	namedArgs = []any{
 		sql.Named("chr", location.Chr()),
 		sql.Named("start", location.Start()),
 		sql.Named("end", location.End()),
 		sql.Named("limit", MaxVariants)}
 
-	query := sqlite.MakePermissionsSql(MAFSql, isAdmin, user.Permissions, &namedArgs)
+	query = sqlite.MakePermissionsSql(MAFSql, isAdmin, user.Permissions, &namedArgs)
 
 	query = MakeInDatasetsSql(query, datasetIds, &namedArgs)
 
@@ -510,6 +535,8 @@ func (wdb *WGSDB) MAF(assembly string,
 
 	defer rows.Close()
 
+	var variantId int
+	var sampleId int
 	var start int
 	var end int
 
@@ -519,6 +546,8 @@ func (wdb *WGSDB) MAF(assembly string,
 	for rows.Next() {
 
 		err := rows.Scan(
+			&sampleId,
+			&variantId,
 			&start,
 			&end,
 		)
@@ -540,7 +569,7 @@ func (wdb *WGSDB) MAF(assembly string,
 
 			// for each position in the variant, add to maf map if not there and then increment count for maf at that position
 			if !ok {
-				maf = &MAFLocation{Start: pos, Index: pos - location.Start(), Count: 0}
+				maf = &MAFLocation{Start: pos, Index: pos - location.Start() + 1, Count: 0}
 				mafMap[pos] = maf
 				mafs = append(mafs, maf)
 			}
@@ -550,7 +579,7 @@ func (wdb *WGSDB) MAF(assembly string,
 
 	}
 
-	results := MAFResults{Location: location, Datasets: datasetIds, MAFs: mafs}
+	results := MAFResults{Location: location, Datasets: datasetIds, Samples: samples, Alleles: 2 * samples, MAFs: mafs}
 
 	return &results, nil
 }

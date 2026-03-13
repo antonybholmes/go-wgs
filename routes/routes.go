@@ -129,7 +129,7 @@ func searchRoute(c *gin.Context, mode string) {
 	})
 }
 
-func MAFRoute(c *gin.Context, mode string) {
+func MAFRoute(c *gin.Context) {
 	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *token.AuthUserJwtClaims) {
 		assembly := c.Query("assembly")
 
