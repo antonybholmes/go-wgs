@@ -297,6 +297,8 @@ cursor.execute(
 assembly_map = {"hg19": 1, "GRCh38": 2, "GRCm39": 3}
 
 
+# assume this is a hugo gene symbol. We can add no hugo
+# symbols later
 cursor.execute(
     f"""
     CREATE TABLE genes (
@@ -308,6 +310,7 @@ cursor.execute(
         refseq TEXT NOT NULL DEFAULT '',
         ncbi INTEGER NOT NULL DEFAULT 0,
         gene_symbol TEXT NOT NULL DEFAULT '',
+        is_hugo BOOLEAN NOT NULL DEFAULT 1, 
         FOREIGN KEY(genome_id) REFERENCES genomes(id));
     """,
 )
@@ -564,6 +567,20 @@ cursor.execute(
     FOREIGN KEY(chr_id) REFERENCES chromosomes(id),
     FOREIGN KEY(gene_id) REFERENCES genes(id),
     FOREIGN KEY(variant_type_id) REFERENCES variant_types(id)
+    );
+    """
+)
+
+cursor.execute(
+    f""" CREATE TABLE secondary_variants (
+    id INTEGER PRIMARY KEY,
+    variant_id INTEGER NOT NULL,
+    gene_id INTEGER,
+    hgvs_c               TEXT NOT NULL DEFAULT "",               -- coding HGVS notation
+    hgvs_p               TEXT NOT NULL DEFAULT "",               -- protein HGVS notation
+    consequence          TEXT NOT NULL DEFAULT "",               -- missense, frameshift, etc.
+    FOREIGN KEY(variant_id) REFERENCES variants(id),
+    FOREIGN KEY(gene_id) REFERENCES genes(id)
     );
     """
 )
