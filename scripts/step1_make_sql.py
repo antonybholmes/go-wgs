@@ -722,7 +722,9 @@ for df in pd.read_csv(
         institution_id = institution_map[institution.lower()]
 
         # dfd = df[df["Dataset"].str.split("|").apply(lambda x: short_name in x)]
-        dfd = df[df["Dataset"].str.contains(rf"(^|\|){short_name}(\||$)", regex=True)]
+        dfd = df[
+            df["Dataset"].str.contains(rf"(?:^|\|){short_name}(?:\||$)", regex=True)
+        ]
 
         if dfd.shape[0] == 0:
             print(f"No rows found for dataset {name}, skipping...")
