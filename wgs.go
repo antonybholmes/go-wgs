@@ -47,6 +47,12 @@ type (
 		Type            string `json:"type,omitempty"`
 	}
 
+	DatasetStats struct {
+		Id       int `json:"id"`
+		Samples  int `json:"samples"`
+		Variants int `json:"variants"`
+	}
+
 	Dataset struct {
 		PublicId    string    `json:"id"`
 		Genome      string    `json:"genome"`
@@ -57,6 +63,7 @@ type (
 		Description string    `json:"description"`
 		File        string    `json:"-"`
 		Samples     []*Sample `json:"samples"`
+		Id          int       `json:"-"`
 		Variants    int       `json:"variants"`
 	}
 
@@ -136,13 +143,13 @@ const (
 	MaxVariants = 1000
 
 	DatasetsSql = `SELECT DISTINCT
-		d.public_id AS dataset_id,
+		d.id,
+		d.public_id AS public_id,
 		g.name AS genome,
 		a.name AS assembly,
 		ins.name AS institution,
 		d.name,
 		d.short_name,
-		d.variants,
 		d.description,
 		s.public_id AS sample_id,
 		s.name AS sample_name,
@@ -163,6 +170,15 @@ const (
 		ORDER BY
 			d.name, 
 			s.name`
+
+	DatasetSamplesAndVariantsSql = `SELECT
+		d.id,
+		COUNT(DISTINCT sv.sample_id) AS samples,
+		COUNT(DISTINCT sv.variant_id) AS variants
+		FROM datasets d
+		JOIN dataset_sample_variants dsv ON d.id = dsv.dataset_id
+		JOIN sample_variants sv ON dsv.sample_variant_id = sv.id
+		GROUP BY d.id`
 
 	BaseSearchSamplesSql = `SELECT	
 		s.id,
@@ -330,11 +346,41 @@ func NewWGSDB(file string) *WGSDB {
 // }
 
 func (wdb *WGSDB) Datasets(assembly string, isAdmin bool, permissions []string) ([]*Dataset, error) {
+	// determine size of all datasets
+
+	rows, err := wdb.db.Query(DatasetSamplesAndVariantsSql)
+
+	if err != nil {
+		return nil, err //fmt.Errorf("there was an error with the database query")
+	}
+
+	defer rows.Close()
+
+	// here we get stats for all datasets for speed since we don't
+	// want to do separate queries and we also don't want to do
+	// the more complex query with permissions since we just want the stats
+	mapDatasetInfo := make(map[int]DatasetStats)
+
+	var datasetId int
+	var samples int
+	var variants int
+
+	for rows.Next() {
+		err := rows.Scan(&datasetId, &samples, &variants)
+
+		if err != nil {
+			return nil, err //fmt.Errorf("there was an error with the database records")
+		}
+
+		mapDatasetInfo[datasetId] = DatasetStats{Id: datasetId, Samples: samples, Variants: variants}
+	}
+
+	// here only datasets with permissions are collated
 	namedArgs := []any{sql.Named("assembly", web.FormatParam(assembly))}
 
 	query := sqlite.MakePermissionsSql(DatasetsSql, isAdmin, permissions, &namedArgs)
 
-	rows, err := wdb.db.Query(query, namedArgs...)
+	rows, err = wdb.db.Query(query, namedArgs...)
 
 	if err != nil {
 		return nil, err //fmt.Errorf("there was an error with the database query")
@@ -351,13 +397,13 @@ func (wdb *WGSDB) Datasets(assembly string, isAdmin bool, permissions []string) 
 		var dataset Dataset
 		var sample Sample
 
-		err := rows.Scan(&dataset.PublicId,
+		err := rows.Scan(&dataset.Id,
+			&dataset.PublicId,
 			&dataset.Genome,
 			&dataset.Assembly,
 			&dataset.Institution,
 			&dataset.Name,
 			&dataset.ShortName,
-			&dataset.Variants,
 			&dataset.Description,
 			&sample.PublicId,
 			&sample.Name,
@@ -368,6 +414,11 @@ func (wdb *WGSDB) Datasets(assembly string, isAdmin bool, permissions []string) 
 
 		if err != nil {
 			return nil, err //fmt.Errorf("there was an error with the database records")
+		}
+
+		// add the variant count if it exists
+		if info, ok := mapDatasetInfo[dataset.Id]; ok {
+			dataset.Variants = info.Variants
 		}
 
 		if currentDataset == nil || currentDataset.PublicId != dataset.PublicId {

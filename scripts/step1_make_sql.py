@@ -19,7 +19,7 @@ datasets = [
         "name": "73 primary",
         "short_name": "73primary",
         "description": "Variants in 73 primary cases.",
-        "size": 73,
+        # "size": 73,
         "institution": "Columbia",
         "index": 1,
         "public_id": str(uuid.uuid7()),
@@ -28,7 +28,7 @@ datasets = [
         "name": "20 ICG",
         "short_name": "20icg",
         "description": "Variants in 20 ICG cases.",
-        "size": 20,
+        # "size": 20,
         "institution": "Columbia",
         "index": 2,
         "public_id": str(uuid.uuid7()),
@@ -37,16 +37,16 @@ datasets = [
         "name": "93 Discovery",
         "short_name": "93discovery",
         "description": "The 73primary + 20icg cases used in the Bal Nature paper.",
-        "size": 93,
+        # "size": 93,
         "institution": "Columbia",
         "index": 3,
         "public_id": str(uuid.uuid7()),
     },
     {
         "name": "29 cell lines",
-        "short_name": "29cl",
+        "short_name": "29cl-dlbcl",
         "description": "Variants in 29 DLBCL cell lines.",
-        "size": 29,
+        # "size": 29,
         "institution": "Columbia",
         "index": 4,
         "public_id": str(uuid.uuid7()),
@@ -55,7 +55,7 @@ datasets = [
         "name": "BCCA 2024 16 SE",
         "short_name": "bcca2024-16se",
         "description": "Variant data from 16 SE regions in the BCCA 2024 dataset.",
-        "size": 222,
+        # "size": 222,
         "institution": "BCCA",
         "index": 5,
         "public_id": str(uuid.uuid7()),
@@ -64,16 +64,16 @@ datasets = [
         "name": "WGS 122",
         "short_name": "122wgs",
         "description": "The 73primary + 20icg + 29cl cases.",
-        "size": 122,
+        # "size": 122,
         "institution": "Columbia",
         "index": 6,
         "public_id": str(uuid.uuid7()),
     },
     {
-        "name": "BCCA 2024 150 primary 16 SE",
-        "short_name": "bcca2024-16se-150",
-        "description": "150 primary samples from the BCCA 2024 dataset in 16 SE regions that are not in the 93 discovery dataset.",
-        "size": 150,
+        "name": "BCCA 2024 16 SE Unique",
+        "short_name": "bcca2024-16se-unique",
+        "description": "Primary samples from the BCCA 2024 dataset in 16 SE regions that are not in the 93 discovery dataset.",
+        # "size": 150,
         "institution": "BCCA",
         "index": 7,
         "public_id": str(uuid.uuid7()),
@@ -190,7 +190,7 @@ for i, gene_symbol in enumerate(df_hugo["Approved symbol"].values):
 
 dir = f"../data/modules/wgs"
 
-file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/DLBCL_Master_121625.xlsx"
+file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/DLBCL_Master_040726.xlsx"
 
 df_samples = pd.read_excel(
     file, sheet_name="Study_Panel_283", header=0, keep_default_na=False
@@ -234,7 +234,7 @@ metadata_map = {meta: mi + 1 for mi, meta in enumerate(metadata)}
 # if not os.path.exists(dataset_dir):
 #    os.makedirs(dataset_dir)
 
-db = os.path.join(dir, f"wgs-20260311.db")
+db = os.path.join(dir, f"wgs-20260415.db")
 
 print(db)
 
@@ -402,7 +402,7 @@ cursor.execute(
 )
 
 cursor.execute(
-    f"""INSERT INTO info (id, public_id, name, version) VALUES (1, '{uuid.uuid7()}', 'mutations', '1.0.0');"""
+    f"""INSERT INTO info (id, public_id, name, version) VALUES (1, '{uuid.uuid7()}', 'wgs', '1.0.0');"""
 )
 
 cursor.execute(
@@ -461,8 +461,6 @@ cursor.execute(
     institution_id INTEGER NOT NULL,
     name TEXT NOT NULL,
     short_name TEXT NOT NULL,
-    samples INTEGER NOT NULL DEFAULT 0,
-    variants INTEGER NOT NULL DEFAULT 0,
     description TEXT NOT NULL DEFAULT "",
     FOREIGN KEY(assembly_id) REFERENCES assemblies(id),
     FOREIGN KEY(institution_id) REFERENCES institutions(id)
@@ -601,6 +599,7 @@ cursor.execute(
     f"""CREATE INDEX idx_annotation_variant_source_key ON annotation (variant_id, LOWER(source), LOWER(key));"""
 )
 
+# match a given sample to a variant along with observed counts for that sample
 cursor.execute(
     f""" CREATE TABLE sample_variants (
     id INTEGER PRIMARY KEY,
@@ -616,6 +615,7 @@ cursor.execute(
     """
 )
 
+# datasets can share variants, so we need a many-to-many relationship
 cursor.execute(
     f""" CREATE TABLE dataset_sample_variants (
     dataset_id INTEGER NOT NULL,
@@ -651,10 +651,8 @@ cursor.execute(
 
 genome = "Human"
 # file = "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/wgs/data/human/rdf/hg19/mutation_database/bcca2024_73primary_29cl_20icg_hg19/bcca2024_73primary_29cl_20icg_hg19.maf.txt"
-file = "/home/antony/development/ngs/wgs/bcca2024/bcca2024-16se_73primary_29cl_20icg_hg19.fixed.maf.txt"
+file = "/home/antony/development/ngs/wgs/bcca2024/v4/bcca2024-16se_73primary_29cl_20icg_hg19.maf.vep.splice.reordered.fix-datasets.v5.txt"  # "/home/antony/development/ngs/wgs/bcca2024/bcca2024-16se_73primary_29cl_20icg_hg19.fixed.maf.txt"
 
-df = pd.read_csv(file, sep="\t", header=0, keep_default_na=False)
-df["Sample"] = df["Sample"].astype(str)
 
 # sort by Chromosome col
 # df = df.sort_values(by="Chromosome")
@@ -664,17 +662,18 @@ sample_map = {}
 
 sample_variant_map = {}
 
+
 for di, dataset in enumerate(datasets):
     dataset_index = dataset["index"]
     dataset_id = dataset["public_id"]
     institution = dataset["institution"]
     name = dataset["name"]
     short_name = dataset["short_name"]
-    size = dataset["size"]
+    # size = dataset["size"]
     description = dataset["description"]
 
     print(
-        f"Processing dataset {dataset_index}: {name} with institution {institution} and size {size}..."
+        f"Processing dataset {dataset_index}: {name} with institution {institution}..."
     )
 
     if institution.lower() not in institution_map:
@@ -686,262 +685,282 @@ for di, dataset in enumerate(datasets):
 
     institution_id = institution_map[institution.lower()]
 
-    # dfd = df[df["Dataset"].str.split("|").apply(lambda x: short_name in x)]
-    dfd = df[df["Dataset"].str.contains(rf"(^|\|){short_name}(\||$)", regex=True)]
-
-    variant_count = dfd.shape[0]
-
     cursor.execute(
-        f"""INSERT INTO datasets (id, public_id, assembly_id, institution_id, name, short_name, samples, variants, description) VALUES (
-            {dataset_index}, 
-            '{dataset_id}', 
-            {assembly_map[assembly]}, 
-            {institution_id}, 
-            '{name}', 
-            '{short_name}', 
-            {size}, 
-            {variant_count},
-            '{description}');
-        """,
+        f"""INSERT INTO datasets (id, public_id, assembly_id, institution_id, name, short_name, description) VALUES (
+                {dataset_index}, 
+                '{dataset_id}', 
+                {assembly_map[assembly]}, 
+                {institution_id}, 
+                '{name}', 
+                '{short_name}', 
+                '{description}');
+            """,
     )
 
     cursor.execute(
         f"INSERT INTO dataset_permissions (dataset_id, permission_id) VALUES ({dataset_index}, 1);",
     )
 
-    for i, row in dfd.iterrows():
-        # mutation_uuid = str(uuid.uuid7())
-        # generate("0123456789abcdefghijklmnopqrstuvwxyz", 12)
+for df in pd.read_csv(
+    file, sep="\t", header=0, keep_default_na=False, chunksize=200000
+):
+    df["Tumor_Sample_Barcode"] = df["Tumor_Sample_Barcode"].astype(str)
 
-        sample = row["Sample"]
-        # remove _allele_1 etc from sample name
-        sample = re.sub(r"_.+", "", sample)
+    for di, dataset in enumerate(datasets):
+        dataset_index = dataset["index"]
+        dataset_id = dataset["public_id"]
+        institution = dataset["institution"]
+        name = dataset["name"]
+        short_name = dataset["short_name"]
+        # size = dataset["size"]
+        description = dataset["description"]
 
-        if sample not in sample_map:
-            sample_map[sample] = len(sample_map) + 1
-
-            sample_index = sample_map[sample]
-            sample_id = str(uuid.uuid7())
-
-            df_samples_d = df_samples[df_samples["Sample ID"] == sample]
-            print(sample, df_samples_d)
-
-            coo = df_samples_d["COO class"].values[0]
-
-            if "nd" in coo.lower():
-                coo = "NA"
-
-            lymphgen = df_samples_d["LymphGen class"].values[0]
-            paired = df_samples_d["Paired normal DNA"].values[0]
-            # ins = df_samples["Institution"].values[i]
-            sample_type = df_samples_d["Sample type"].values[0]
-
-            cursor.execute(
-                f"""INSERT INTO samples (id, public_id, name, coo, lymphgen_class, paired_normal_dna, type) VALUES (
-                {sample_index}, 
-                '{sample_id}', 
-                '{sample}', 
-                '{coo}', 
-                '{lymphgen}', 
-                '{paired}', 
-                '{sample_type}') 
-                ON CONFLICT DO NOTHING;
-            """,
-            )
-
-        sample_index = sample_map[sample]
-
-        # map samples to datasets
-
-        cursor.execute(
-            f"INSERT INTO dataset_samples (dataset_id, sample_id) VALUES ({dataset_index}, {sample_index}) ON CONFLICT DO NOTHING;",
+        print(
+            f"Processing dataset {dataset_index}: {name} with institution {institution}..."
         )
 
-        # if dataset_index == 1 or dataset_index == 2:
-        #     # sample is also added to the 93 discovery dataset if part of the 73 or 20 icg
-        #     cursor.execute(
-        #         f"INSERT INTO dataset_samples (dataset_id, sample_id) VALUES (3, {sample_index}) ON CONFLICT DO NOTHING;",
-        #     )
+        institution_id = institution_map[institution.lower()]
 
-        chr = row["Chromosome"]
+        # dfd = df[df["Dataset"].str.split("|").apply(lambda x: short_name in x)]
+        dfd = df[df["Dataset"].str.contains(rf"(^|\|){short_name}(\||$)", regex=True)]
 
-        chr = chr.upper().replace("MT", "M")
-        chr = chr.replace("CHR", "")
-        chr = "chr" + chr
-
-        if chr not in chr_map[genome]:
+        if dfd.shape[0] == 0:
+            print(f"No rows found for dataset {name}, skipping...")
             continue
 
-        chr_id = chr_map[genome][chr]
+        for i, row in dfd.iterrows():
+            # mutation_uuid = str(uuid.uuid7())
+            # generate("0123456789abcdefghijklmnopqrstuvwxyz", 12)
 
-        start = row["Start_Position"]
-        end = row["End_Position"]
-        ref = row["Reference_Allele"]
-        tum = row["Tumor_Seq_Allele2"]
-        gene = row["Hugo_Symbol"]
-        vaf = row["VAF"]
-        db = row["Dataset"]
-        hgvs_c = row["DNAChange"]
-        hgvs_p = row["AAChange"]
-        consequence = row["Variant_Classification"]
+            sample = row["Tumor_Sample_Barcode"]
+            # remove _allele_1 etc from sample name
+            sample = re.sub(r"_.+", "", sample)
 
-        # reduce space by using empty string instead of NA or . for missing values
-        if consequence == "NA" or consequence == ".":
-            consequence = ""
+            if sample not in sample_map:
+                sample_map[sample] = len(sample_map) + 1
 
-        if hgvs_c == "NA" or hgvs_c == ".":
-            hgvs_c = ""
+                sample_index = sample_map[sample]
+                sample_id = str(uuid.uuid7())
 
-        if hgvs_p == "NA" or hgvs_p == ".":
-            hgvs_p = ""
+                df_samples_d = df_samples[df_samples["Sample ID"] == sample]
+                print(sample, df_samples_d)
 
-        if gene == "NA" or gene == ".":
-            gene = ""
+                coo = df_samples_d["COO class"].values[0]
 
-        # default to assuming no gene found
-        gene_id = "NULL"
+                if "nd" in coo.lower():
+                    coo = "NA"
 
-        for g in gene.split(";"):
-            if g != "":
-                id = gene_id_map[genome.lower()].get(g.lower(), -1)
-
-                if id != -1:
-                    # print(f"Gene: {g}, Gene ID: {gene_id}", "dataset", dataset)
-
-                    # change gene id from null to the actual gene id, if found
-                    gene_id = official_symbols[genome.lower()][id]["index"]
-                    break
-
-        if vaf == "na":
-            vaf = -1
-
-        # variant_type = dfd["Variant_Type"].values[i]
-
-        t_alt_count = row["t_alt_count"]
-        t_depth = row["t_depth"]
-
-        # if t_alt_count == "na":
-        #    t_alt_count = -1
-
-        # if t_depth == "na":
-        #    t_depth = -1
-
-        snvs = []
-
-        # split concatenated snps
-        if len(ref) > 1 and len(tum) > 1 and len(ref) == len(tum):
-            for idx in range(len(ref)):
-                ref_i = ref[idx]
-                tum_i = tum[idx]
-
-                if ref_i == tum_i:
-                    continue
-
-                start_i = start + idx
-                end_i = end - (len(ref) - idx - 1)
-
-                snvs.append(
-                    {"start": start_i, "end": end_i, "ref": ref_i, "tum": tum_i}
-                )
-
-            variant_type = "SNV"
-        else:
-            snvs.append({"start": start, "end": end, "ref": ref, "tum": tum})
-
-            if ref[0] == "-":
-                variant_type = "INS"
-            elif tum[0] == "-":
-                variant_type = "DEL"
-            else:
-                # print(f"Unknown variant type for ref: {ref}, tum: {tum} {start}")
-                variant_type = "SNV"
-                # sys.exit(1)
-
-        if variant_type not in variant_type_map:
-            print(variant_type)
-            variant_type_id = len(variant_type_map) + 1
-            variant_type_map[variant_type] = variant_type_id
-            cursor.execute(
-                f"INSERT INTO variant_types (id, public_id, name) VALUES ({variant_type_id}, '{uuid.uuid7()}', '{variant_type}');"
-            )
-
-        variant_type_id = variant_type_map[variant_type]
-
-        for snv in snvs:
-            # we unique mutations by their genomic location and change to reduce repeats
-            variant_key = "|".join(
-                [
-                    str(chr_id),
-                    str(variant_type_id),
-                    str(gene_id),
-                    str(snv["start"]),
-                    str(snv["end"]),
-                    snv["ref"],
-                    snv["tum"],
-                    hgvs_p,
-                    consequence,
-                ]
-            )
-
-            if variant_key not in variant_map:
-                mutation_index = len(variant_map) + 1
-                variant_map[variant_key] = mutation_index
+                lymphgen = df_samples_d["LymphGen class"].values[0]
+                paired = df_samples_d["Paired normal DNA"].values[0]
+                # ins = df_samples["Institution"].values[i]
+                sample_type = df_samples_d["Sample type"].values[0]
 
                 cursor.execute(
-                    f"""INSERT INTO variants (id, chr_id, variant_type_id, gene_id, start, end, ref, tum, hgvs_c, hgvs_p, consequence) VALUES (
-                    {mutation_index}, 
-                    {chr_id}, 
-                    {variant_type_id}, 
-                    {gene_id}, 
-                    {snv['start']}, 
-                    {snv['end']}, 
-                    '{snv['ref']}', 
-                    '{snv['tum']}', 
-                    '{hgvs_c}', 
-                    '{hgvs_p}', 
-                    '{consequence}');
-                    """
-                )
-
-            variant_index = variant_map[variant_key]
-
-            # so we can merge mutations from different tables, use the public_id as foreign key
-
-            # if we are in the 73 primary or 20 ICG datasets, also add to the 93 discovery dataset
-            # if dataset_index == 1 or dataset_index == 2:
-            #     datasets = [dataset_index, 3]
-            # else:
-            #     # only add variant to the current dataset
-            #     datasets = [dataset_index]
-
-            # for dsi in datasets:
-
-            sample_variant_key = (
-                f"{sample_index}|{variant_index}|{t_alt_count}|{t_depth}"
-            )
-
-            if sample_variant_key not in sample_variant_map:
-                sample_variant_map[sample_variant_key] = len(sample_variant_map) + 1
-                sample_variant_index = sample_variant_map[sample_variant_key]
-                cursor.execute(
-                    f"""INSERT INTO sample_variants (id, sample_id, variant_id, t_alt_count, t_depth, vaf) VALUES (
-                    {sample_variant_index},
+                    f"""INSERT INTO samples (id, public_id, name, coo, lymphgen_class, paired_normal_dna, type) VALUES (
                     {sample_index}, 
-                    {variant_index}, 
-                    {t_alt_count}, 
-                    {t_depth}, 
-                    {vaf}) ON CONFLICT DO NOTHING;
-                    """
+                    '{sample_id}', 
+                    '{sample}', 
+                    '{coo}', 
+                    '{lymphgen}', 
+                    '{paired}', 
+                    '{sample_type}') 
+                    ON CONFLICT DO NOTHING;
+                """,
                 )
 
-            sample_variant_index = sample_variant_map[sample_variant_key]
+            sample_index = sample_map[sample]
+
+            # map samples to datasets
 
             cursor.execute(
-                f"""INSERT INTO dataset_sample_variants (dataset_id, sample_variant_id) VALUES (
-                {dataset_index}, 
-                {sample_variant_index}) ON CONFLICT DO NOTHING;
-                """
+                f"INSERT INTO dataset_samples (dataset_id, sample_id) VALUES ({dataset_index}, {sample_index}) ON CONFLICT DO NOTHING;",
             )
+
+            # if dataset_index == 1 or dataset_index == 2:
+            #     # sample is also added to the 93 discovery dataset if part of the 73 or 20 icg
+            #     cursor.execute(
+            #         f"INSERT INTO dataset_samples (dataset_id, sample_id) VALUES (3, {sample_index}) ON CONFLICT DO NOTHING;",
+            #     )
+
+            chr = row["Chromosome"]
+
+            chr = chr.upper().replace("MT", "M")
+            chr = chr.replace("CHR", "")
+            chr = "chr" + chr
+
+            if chr not in chr_map[genome]:
+                continue
+
+            chr_id = chr_map[genome][chr]
+
+            start = row["Start_Position"]
+            end = row["End_Position"]
+            ref = row["Reference_Allele"]
+            tum = row["Tumor_Seq_Allele2"]
+            gene = row["VEP_Gene_Symbol"]  # row["Hugo_Symbol"]
+            vaf = row["VAF"]
+            db = row["Dataset"]
+            hgvs_c = row["VEP_HGVSc"]  # row["DNAChange"]
+            hgvs_p = row["VEP_HGVSp"]  # row["AAChange"]
+            consequence = row["VEP_Variant_Classification"]
+
+            # reduce space by using empty string instead of NA or . for missing values
+            if consequence == "NA" or consequence == ".":
+                consequence = ""
+
+            if hgvs_c == "NA" or hgvs_c == ".":
+                hgvs_c = ""
+
+            if hgvs_p == "NA" or hgvs_p == ".":
+                hgvs_p = ""
+
+            if gene == "NA" or gene == ".":
+                gene = ""
+
+            # default to assuming no gene found
+            gene_id = "NULL"
+
+            for g in gene.split(";"):
+                if g != "":
+                    id = gene_id_map[genome.lower()].get(g.lower(), -1)
+
+                    if id != -1:
+                        # print(f"Gene: {g}, Gene ID: {gene_id}", "dataset", dataset)
+
+                        # change gene id from null to the actual gene id, if found
+                        gene_id = official_symbols[genome.lower()][id]["index"]
+                        break
+
+            if vaf == "na":
+                vaf = -1
+
+            # variant_type = dfd["Variant_Type"].values[i]
+
+            t_alt_count = row["t_alt_count"]
+            t_depth = row["t_depth"]
+
+            # if t_alt_count == "na":
+            #    t_alt_count = -1
+
+            # if t_depth == "na":
+            #    t_depth = -1
+
+            snvs = []
+
+            # split concatenated snps
+            if len(ref) > 1 and len(tum) > 1 and len(ref) == len(tum):
+                for idx in range(len(ref)):
+                    ref_i = ref[idx]
+                    tum_i = tum[idx]
+
+                    if ref_i == tum_i:
+                        continue
+
+                    start_i = start + idx
+                    end_i = end - (len(ref) - idx - 1)
+
+                    snvs.append(
+                        {"start": start_i, "end": end_i, "ref": ref_i, "tum": tum_i}
+                    )
+
+                variant_type = "SNV"
+            else:
+                snvs.append({"start": start, "end": end, "ref": ref, "tum": tum})
+
+                if ref[0] == "-":
+                    variant_type = "INS"
+                elif tum[0] == "-":
+                    variant_type = "DEL"
+                else:
+                    # print(f"Unknown variant type for ref: {ref}, tum: {tum} {start}")
+                    variant_type = "SNV"
+                    # sys.exit(1)
+
+            if variant_type not in variant_type_map:
+                print(variant_type)
+                variant_type_id = len(variant_type_map) + 1
+                variant_type_map[variant_type] = variant_type_id
+                cursor.execute(
+                    f"INSERT INTO variant_types (id, public_id, name) VALUES ({variant_type_id}, '{uuid.uuid7()}', '{variant_type}');"
+                )
+
+            variant_type_id = variant_type_map[variant_type]
+
+            for snv in snvs:
+                # we unique mutations by their genomic location and change to reduce repeats
+                variant_key = "|".join(
+                    [
+                        str(chr_id),
+                        str(variant_type_id),
+                        str(gene_id),
+                        str(snv["start"]),
+                        str(snv["end"]),
+                        snv["ref"],
+                        snv["tum"],
+                        hgvs_p,
+                        consequence,
+                    ]
+                )
+
+                if variant_key not in variant_map:
+                    mutation_index = len(variant_map) + 1
+                    variant_map[variant_key] = mutation_index
+
+                    cursor.execute(
+                        f"""INSERT INTO variants (id, chr_id, variant_type_id, gene_id, start, end, ref, tum, hgvs_c, hgvs_p, consequence) VALUES (
+                        {mutation_index}, 
+                        {chr_id}, 
+                        {variant_type_id}, 
+                        {gene_id}, 
+                        {snv['start']}, 
+                        {snv['end']}, 
+                        '{snv['ref']}', 
+                        '{snv['tum']}', 
+                        '{hgvs_c}', 
+                        '{hgvs_p}', 
+                        '{consequence}');
+                        """
+                    )
+
+                variant_index = variant_map[variant_key]
+
+                # so we can merge mutations from different tables, use the public_id as foreign key
+
+                # if we are in the 73 primary or 20 ICG datasets, also add to the 93 discovery dataset
+                # if dataset_index == 1 or dataset_index == 2:
+                #     datasets = [dataset_index, 3]
+                # else:
+                #     # only add variant to the current dataset
+                #     datasets = [dataset_index]
+
+                # for dsi in datasets:
+
+                sample_variant_key = (
+                    f"{sample_index}|{variant_index}|{t_alt_count}|{t_depth}"
+                )
+
+                if sample_variant_key not in sample_variant_map:
+                    sample_variant_map[sample_variant_key] = len(sample_variant_map) + 1
+                    sample_variant_index = sample_variant_map[sample_variant_key]
+                    cursor.execute(
+                        f"""INSERT INTO sample_variants (id, sample_id, variant_id, t_alt_count, t_depth, vaf) VALUES (
+                        {sample_variant_index},
+                        {sample_index}, 
+                        {variant_index}, 
+                        {t_alt_count}, 
+                        {t_depth}, 
+                        {vaf}) ON CONFLICT DO NOTHING;
+                        """
+                    )
+
+                sample_variant_index = sample_variant_map[sample_variant_key]
+
+                cursor.execute(
+                    f"""INSERT INTO dataset_sample_variants (dataset_id, sample_variant_id) VALUES (
+                    {dataset_index}, 
+                    {sample_variant_index}) ON CONFLICT DO NOTHING;
+                    """
+                )
 
 
 conn.commit()
