@@ -297,6 +297,42 @@ cursor.execute(
 assembly_map = {"hg19": 1, "GRCh38": 2, "GRCm39": 3}
 
 
+# cursor.execute(
+#     f"""
+#     CREATE TABLE features (
+#         id INTEGER PRIMARY KEY,
+#         public_id TEXT NOT NULL UNIQUE,
+#         name TEXT NOT NULL UNIQUE)
+#     """,
+# )
+# cursor.execute("CREATE INDEX idx_features_name ON features(LOWER(name));")
+
+# cursor.execute(
+#     f"INSERT INTO features (id, public_id, name) VALUES (1, '{uuid.uuid7()}', 'gene');"
+# )
+# cursor.execute(
+#     f"INSERT INTO features (id, public_id, name) VALUES (2, '{uuid.uuid7()}', 'transcript');"
+# )
+# cursor.execute(
+#     f"INSERT INTO features (id, public_id, name) VALUES (3, '{uuid.uuid7()}', 'exon');"
+# )
+# cursor.execute(
+#     f"INSERT INTO features (id, public_id, name) VALUES (4, '{uuid.uuid7()}', 'CDS');"
+# )
+
+# feature_map = {"gene": 1, "transcript": 2, "exon": 3, "CDS": 4}
+
+cursor.execute(
+    f"""
+    CREATE TABLE biotypes (
+        id INTEGER PRIMARY KEY,
+        public_id TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL UNIQUE);
+    """
+)
+
+cursor.execute("CREATE INDEX idx_biotypes_name ON biotypes(LOWER(name));")
+
 # assume this is a hugo gene symbol. We can add no hugo
 # symbols later
 cursor.execute(
@@ -305,41 +341,136 @@ cursor.execute(
         id INTEGER PRIMARY KEY,
         public_id TEXT NOT NULL UNIQUE,
         genome_id INTEGER NOT NULL,
+        biotype_id INTEGER NOT NULL,
         gene_id TEXT NOT NULL,
-        ensembl TEXT NOT NULL DEFAULT '',
-        refseq TEXT NOT NULL DEFAULT '',
-        ncbi INTEGER NOT NULL DEFAULT 0,
         gene_symbol TEXT NOT NULL DEFAULT '',
-        is_hugo BOOLEAN NOT NULL DEFAULT 1, 
-        FOREIGN KEY(genome_id) REFERENCES genomes(id));
-    """,
+        is_hugo BOOLEAN NOT NULL DEFAULT 0,
+        is_canonical BOOLEAN NOT NULL DEFAULT 0,
+        FOREIGN KEY(genome_id) REFERENCES genomes(id),
+        FOREIGN KEY(biotype_id) REFERENCES biotypes(id));
+    """
 )
 
-genomes = ["human"]
+cursor.execute("CREATE INDEX idx_genes_gene_id ON genes(LOWER(gene_id));")
+cursor.execute("CREATE INDEX idx_genes_gene_symbol ON genes(LOWER(gene_symbol));")
+cursor.execute("CREATE INDEX idx_genes_genome_id ON genes(genome_id);")
+cursor.execute("CREATE INDEX idx_genes_biotype_id ON genes(biotype_id);")
+
+cursor.execute(
+    f"""
+    CREATE TABLE transcripts (
+        id INTEGER PRIMARY KEY,
+        public_id TEXT NOT NULL UNIQUE,
+        gene_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        mane_refseq TEXT NOT NULL DEFAULT "",
+        mane_status TEXT NOT NULL DEFAULT "",
+        exons INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY(gene_id) REFERENCES genes(id));
+    """
+)
+
+cursor.execute("CREATE INDEX idx_transcripts_name ON transcripts(LOWER(name));")
 
 
-for si, g in enumerate(genomes):
-    genome_id = genome_map[g]
-    for id in sorted(official_symbols[g.lower()]):
-        d = official_symbols[g.lower()][id]
+df_genes = pd.read_csv(
+    "/ifs/archive/cancer/Lab_RDF/scratch_Lab_RDF/ngs/references/gencode/grch37/gencode_v48lift37_basic_transcripts.tsv",
+    sep="\t",
+    header=0,
+)
 
+biotype_map = {}
+gene_map = {}
+transcript_map = {}
+
+for i, row in df_genes.iterrows():
+    gene_id = row["gene_id"]
+    gene_symbol = row["gene_symbol"]
+    hgnc_id = row["hgnc_id"]
+    is_hugo = bool(hgnc_id)
+    is_canonical = bool(row["is_canonical"])
+    transcript = row["transcript_id"]
+    exons = row["exons"]
+    biotype = row["biotype"]
+
+    if biotype not in biotype_map:
+        biotype_map[biotype] = len(biotype_map) + 1
+        biotype_db_id = biotype_map[biotype]
         cursor.execute(
-            f"INSERT INTO genes (id, public_id, genome_id, gene_id, ensembl, refseq, ncbi, gene_symbol) VALUES (:id, :public_id, :genome_id, :gene_id, :ensembl, :refseq, :ncbi, :gene_symbol);",
+            f"INSERT INTO biotypes (id, public_id, name) VALUES (:id, :public_id, :name);",
             (
                 {
-                    "id": d["index"],
+                    "id": biotype_db_id,
                     "public_id": str(uuid.uuid7()),
-                    "genome_id": genome_id,
-                    "gene_id": d["gene_id"],
-                    "ensembl": d["ensembl"],
-                    "refseq": d["refseq"],
-                    "ncbi": d["ncbi"],
-                    "gene_symbol": d["gene_symbol"],
+                    "name": biotype,
                 }
             ),
         )
 
-cursor.execute("COMMIT;")
+    biotype_db_id = biotype_map[biotype]
+
+    if gene_id not in gene_map:
+        gene_map[gene_id] = len(gene_map) + 1
+        gene_db_id = gene_map[gene_id]
+        cursor.execute(
+            f"INSERT INTO genes (id, public_id, genome_id, biotype_id, gene_id, gene_symbol, is_hugo, is_canonical) VALUES (:id, :public_id, :genome_id, :biotype_id, :gene_id, :gene_symbol, :is_hugo, :is_canonical);",
+            (
+                {
+                    "id": gene_db_id,
+                    "public_id": str(uuid.uuid7()),
+                    "genome_id": genome_map[genome.lower()],
+                    "biotype_id": biotype_db_id,
+                    "gene_id": gene_id,
+                    "gene_symbol": gene_symbol,
+                    "is_hugo": is_hugo,
+                    "is_canonical": is_canonical,
+                }
+            ),
+        )
+
+    gene_db_id = gene_map[gene_id]
+
+    if transcript not in transcript_map:
+        transcript_map[transcript] = len(transcript_map) + 1
+        transcript_db_id = transcript_map[transcript]
+        cursor.execute(
+            f"INSERT INTO transcripts (id, public_id, gene_id, name, exons) VALUES (:id, :public_id, :gene_id, :name, :exons);",
+            (
+                {
+                    "id": transcript_db_id,
+                    "public_id": str(uuid.uuid7()),
+                    "gene_id": gene_db_id,
+                    "name": transcript,
+                    "exons": exons,
+                }
+            ),
+        )
+
+
+genomes = ["human"]
+
+
+# for si, g in enumerate(genomes):
+#     genome_id = genome_map[g]
+#     for id in sorted(official_symbols[g.lower()]):
+#         d = official_symbols[g.lower()][id]
+
+#         cursor.execute(
+#             f"INSERT INTO genes (id, public_id, genome_id, gene_id, gene_symbol, is_hugo, is_canonical) VALUES (:id, :public_id, :genome_id, :gene_id, :gene_symbol, :is_hugo, :is_canonical);",
+#             (
+#                 {
+#                     "id": d["index"],
+#                     "public_id": str(uuid.uuid7()),
+#                     "genome_id": genome_id,
+#                     "gene_id": d["gene_id"],
+#                     "gene_symbol": d["gene_symbol"],
+#                     "is_hugo": d["is_hugo"],
+#                     "is_canonical": d["is_canonical"],
+#                 }
+#             ),
+#         )
+
+# cursor.execute("COMMIT;")
 
 
 cursor.execute(
@@ -555,10 +686,12 @@ cursor.execute(
     f""" CREATE TABLE variants (
     id INTEGER PRIMARY KEY,
     chr_id INTEGER NOT NULL,
-    gene_id INTEGER,
+    gene_id INTEGER NOT NULL,
+    transcript_id INTEGER NOT NULL,
     variant_type_id INTEGER NOT NULL,
     start INTEGER NOT NULL,
     end INTEGER NOT NULL,
+    exon INTEGER NOT NULL DEFAULT 0,
     ref TEXT NOT NULL,
     tum TEXT NOT NULL,
     hgvs_c               TEXT NOT NULL DEFAULT "",               -- coding HGVS notation
@@ -566,6 +699,7 @@ cursor.execute(
     consequence          TEXT NOT NULL DEFAULT "",               -- missense, frameshift, etc.
     FOREIGN KEY(chr_id) REFERENCES chromosomes(id),
     FOREIGN KEY(gene_id) REFERENCES genes(id),
+    FOREIGN KEY(transcript_id) REFERENCES transcripts(id),
     FOREIGN KEY(variant_type_id) REFERENCES variant_types(id)
     );
     """
@@ -594,6 +728,9 @@ cursor.execute(
 )
 
 cursor.execute(f"""CREATE INDEX idx_variants_gene_id ON variants (gene_id);""")
+cursor.execute(
+    f"""CREATE INDEX idx_variants_transcript_id ON variants (transcript_id);"""
+)
 
 
 cursor.execute(
@@ -622,9 +759,11 @@ cursor.execute(
     id INTEGER PRIMARY KEY,
     sample_id INTEGER NOT NULL,
     variant_id INTEGER NOT NULL,
-    t_alt_count INTEGER NOT NULL DEFAULT -1,
-    t_depth INTEGER NOT NULL DEFAULT -1,
-    vaf FLOAT NOT NULL DEFAULT -1,
+    n_alt_count INTEGER NOT NULL DEFAULT 0,
+    n_depth INTEGER NOT NULL DEFAULT 0,
+    t_alt_count INTEGER NOT NULL DEFAULT 0,
+    t_depth INTEGER NOT NULL DEFAULT 0,
+    vaf FLOAT NOT NULL DEFAULT 0,
     UNIQUE (sample_id, variant_id),
     FOREIGN KEY(sample_id) REFERENCES samples(id),
     FOREIGN KEY(variant_id) REFERENCES variants(id)
@@ -673,6 +812,7 @@ file = "/home/antony/development/ngs/wgs/bcca2024/v4/bcca2024-16se_73primary_29c
 
 # sort by Chromosome col
 # df = df.sort_values(by="Chromosome")
+
 
 variant_map = {}
 sample_map = {}
@@ -816,7 +956,17 @@ for df in pd.read_csv(
             end = row["End_Position"]
             ref = row["Reference_Allele"]
             tum = row["Tumor_Seq_Allele2"]
-            gene = row["VEP_Gene_Symbol"]  # row["Hugo_Symbol"]
+            gene_id = row["VEP_Gene_ID"]  # row["Entrez_Gene_Id"]
+            gene_symbol = row["VEP_Gene_Symbol"]  # row["Hugo_Symbol"]
+            is_hugo = row["VEP_Is_Hugo_Gene"]
+            is_canonical = row["VEP_Is_Canonical"]
+            exon = row["VEP_Exon"]
+            exons = row["VEP_Total_Exons"]
+            biotype = row["VEP_Biotype"]
+
+            transcript = row["VEP_Transcript"]
+            mane_refseq = row["MANE_RefSeq"]
+            mane_status = row["MANE_status"]
             vaf = row["VAF"]
             db = row["Dataset"]
             hgvs_c = row["VEP_HGVSc"]  # row["DNAChange"]
@@ -833,22 +983,94 @@ for df in pd.read_csv(
             if hgvs_p == "NA" or hgvs_p == ".":
                 hgvs_p = ""
 
-            if gene == "NA" or gene == ".":
-                gene = ""
+            if gene_symbol == "NA" or gene_symbol == ".":
+                gene_symbol = ""
 
-            # default to assuming no gene found
-            gene_id = "NULL"
+            if transcript == "NA" or transcript == ".":
+                transcript = ""
 
-            for g in gene.split(";"):
-                if g != "":
-                    id = gene_id_map[genome.lower()].get(g.lower(), -1)
+            if mane_refseq == "NA" or mane_refseq == ".":
+                mane_refseq = ""
 
-                    if id != -1:
-                        # print(f"Gene: {g}, Gene ID: {gene_id}", "dataset", dataset)
+            if mane_status == "NA" or mane_status == ".":
+                mane_status = ""
 
-                        # change gene id from null to the actual gene id, if found
-                        gene_id = official_symbols[genome.lower()][id]["index"]
-                        break
+            if biotype == "NA" or biotype == ".":
+                biotype = ""
+
+            if exon == "NA" or exon == ".":
+                exon = 0
+
+            if exons == "NA" or exons == ".":
+                exons = 0
+
+            if biotype not in biotype_map:
+                biotype_map[biotype] = len(biotype_map) + 1
+                biotype_db_id = biotype_map[biotype]
+                cursor.execute(
+                    f"INSERT INTO biotypes (id, public_id, name) VALUES (:id, :public_id, :name);",
+                    (
+                        {
+                            "id": biotype_db_id,
+                            "public_id": str(uuid.uuid7()),
+                            "name": biotype,
+                        }
+                    ),
+                )
+
+            biotype_db_id = biotype_map[biotype]
+
+            if gene_id not in gene_map:
+                gene_map[gene_id] = len(gene_map) + 1
+                gene_db_id = gene_map[gene_id]
+                cursor.execute(
+                    f"INSERT INTO genes (id, public_id, genome_id, biotype_id, gene_id, gene_symbol, is_hugo, is_canonical) VALUES (:id, :public_id, :genome_id, :biotype_id, :gene_id, :gene_symbol, :is_hugo, :is_canonical);",
+                    (
+                        {
+                            "id": gene_db_id,
+                            "public_id": str(uuid.uuid7()),
+                            "genome_id": genome_map[genome.lower()],
+                            "biotype_id": biotype_db_id,
+                            "gene_id": gene_id,
+                            "gene_symbol": gene_symbol,
+                            "is_hugo": is_hugo,
+                            "is_canonical": is_canonical,
+                        }
+                    ),
+                )
+
+            gene_db_id = gene_map[gene_id]
+
+            if transcript not in transcript_map:
+                transcript_map[transcript] = len(transcript_map) + 1
+                transcript_db_id = transcript_map[transcript]
+                cursor.execute(
+                    f"INSERT INTO transcripts (id, public_id, gene_id, name, mane_refseq, mane_status, exons) VALUES (:id, :public_id, :gene_id, :name, :mane_refseq, :mane_status, :exons);",
+                    (
+                        {
+                            "id": transcript_db_id,
+                            "public_id": str(uuid.uuid7()),
+                            "gene_id": gene_db_id,
+                            "name": transcript,
+                            "mane_refseq": mane_refseq,
+                            "mane_status": mane_status,
+                            "exons": exons,
+                        }
+                    ),
+                )
+
+            transcript_db_id = transcript_map[transcript]
+
+            # for g in gene_symbol.split(";"):
+            #     if g != "":
+            #         id = gene_id_map[genome.lower()].get(g.lower(), -1)
+
+            #         if id != -1:
+            #             # print(f"Gene: {g}, Gene ID: {gene_id}", "dataset", dataset)
+
+            #             # change gene id from null to the actual gene id, if found
+            #             gene_id = official_symbols[genome.lower()][id]["index"]
+            #             break
 
             if vaf == "na":
                 vaf = -1
@@ -907,11 +1129,23 @@ for df in pd.read_csv(
 
             for snv in snvs:
                 # we unique mutations by their genomic location and change to reduce repeats
+                # print(
+                #     gene_id,
+                #     transcript,
+                #     snv["start"],
+                #     snv["end"],
+                #     snv["ref"],
+                #     snv["tum"],
+                #     hgvs_p,
+                #     consequence,
+                # )
+
                 variant_key = "|".join(
                     [
                         str(chr_id),
                         str(variant_type_id),
-                        str(gene_id),
+                        gene_id,
+                        transcript,
                         str(snv["start"]),
                         str(snv["end"]),
                         snv["ref"],
@@ -926,13 +1160,15 @@ for df in pd.read_csv(
                     variant_map[variant_key] = mutation_index
 
                     cursor.execute(
-                        f"""INSERT INTO variants (id, chr_id, variant_type_id, gene_id, start, end, ref, tum, hgvs_c, hgvs_p, consequence) VALUES (
+                        f"""INSERT INTO variants (id, chr_id, variant_type_id, gene_id, transcript_id, start, end, exon, ref, tum, hgvs_c, hgvs_p, consequence) VALUES (
                         {mutation_index}, 
                         {chr_id}, 
                         {variant_type_id}, 
-                        {gene_id}, 
+                        {gene_db_id}, 
+                        {transcript_db_id}, 
                         {snv['start']}, 
                         {snv['end']}, 
+                        {exon},
                         '{snv['ref']}', 
                         '{snv['tum']}', 
                         '{hgvs_c}', 

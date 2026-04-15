@@ -68,21 +68,27 @@ type (
 	}
 
 	Variant struct {
-		HGVSc       string   `json:"hgvsC,omitempty"`
 		Sample      string   `json:"sample"`
 		Chr         string   `json:"chr"`
 		Ref         string   `json:"ref"`
 		Tum         string   `json:"tum"`
-		GeneSymbol  string   `json:"gene,omitempty"`
+		Gene        string   `json:"gene"`
+		Transcript  string   `json:"transcript"`
 		Type        string   `json:"type"`
-		Consequence string   `json:"consequence,omitempty"`
+		Consequence string   `json:"consequence"`
 		HGVSp       string   `json:"hgvsP,omitempty"`
+		HGVSc       string   `json:"hgvsC,omitempty"`
 		Datasets    []string `json:"datasets"`
 		Start       int      `json:"start"`
+		End         int      `json:"end"`
+		Exon        int      `json:"exon"`
+		Exons       int      `json:"exons"`
+		NRefCount   int      `json:"nRefCount"`
+		NAltCount   int      `json:"nAltCount"`
+		NDepth      int      `json:"nDepth"`
+		TRefCount   int      `json:"tRefCount"`
 		TAltCount   int      `json:"tAltCount"`
 		TDepth      int      `json:"tDepth"`
-		TRefCount   int      `json:"tRefCount"`
-		End         int      `json:"end"`
 		Id          int      `json:"-"`
 		Vaf         float64  `json:"vaf"`
 		Y           int      `json:"y,omitempty"`
@@ -227,18 +233,25 @@ const (
 			v.hgvs_c,
 			v.hgvs_p,
 			v.consequence,
+			v.exon,
 			vt.name AS variant_type,
-			COALESCE(g.gene_symbol, '') AS gene_symbol,
+			g.gene_symbol AS gene_symbol,
+			t.name AS transcript,
+			t.exons,
 			d.public_id AS dataset,
 			s.public_id AS sample,
-			sv.t_depth - sv.t_alt_count AS ref_count, 
+			sv.n_depth - sv.n_alt_count AS n_ref_count, 
+			sv.n_alt_count, 
+			sv.n_depth,
+			sv.t_depth - sv.t_alt_count AS t_ref_count, 
 			sv.t_alt_count, 
 			sv.t_depth,
-			sv.vaf
+			ROUND(sv.vaf, 4) AS vaf
 		FROM variants v
 		JOIN chromosomes c ON c.id = v.chr_id
 		JOIN variant_types vt ON vt.id = v.variant_type_id
 		JOIN genes g ON v.gene_id = g.id
+		JOIN transcripts t ON v.transcript_id = t.id
 		JOIN sample_variants sv ON sv.variant_id = v.id
 		JOIN samples s ON sv.sample_id = s.id
 		JOIN dataset_sample_variants dsv ON dsv.sample_variant_id = sv.id
@@ -314,21 +327,21 @@ func MakeInDatasetsSql(query string, datasetIds []string, namedArgs *[]any) stri
 
 func (variant *Variant) Clone() *Variant {
 	var ret Variant = Variant{
-		Id:         variant.Id,
-		Chr:        variant.Chr,
-		Start:      variant.Start,
-		End:        variant.End,
-		Ref:        variant.Ref,
-		Tum:        variant.Tum,
-		TRefCount:  variant.TRefCount,
-		TAltCount:  variant.TAltCount,
-		GeneSymbol: variant.GeneSymbol,
-		TDepth:     variant.TDepth,
-		Type:       variant.Type,
-		Vaf:        variant.Vaf,
-		Sample:     variant.Sample,
-		Datasets:   variant.Datasets,
-		Y:          variant.Y,
+		Id:        variant.Id,
+		Chr:       variant.Chr,
+		Start:     variant.Start,
+		End:       variant.End,
+		Ref:       variant.Ref,
+		Tum:       variant.Tum,
+		TRefCount: variant.TRefCount,
+		TAltCount: variant.TAltCount,
+		Gene:      variant.Gene,
+		TDepth:    variant.TDepth,
+		Type:      variant.Type,
+		Vaf:       variant.Vaf,
+		Sample:    variant.Sample,
+		Datasets:  variant.Datasets,
+		Y:         variant.Y,
 	}
 
 	return &ret
@@ -469,7 +482,7 @@ func (wdb *WGSDB) Search(assembly string,
 
 	defer rows.Close()
 
-	results := make([]*Variant, 0, 200)
+	results := make([]*Variant, 0, 100)
 
 	//var currentDatasetResults *DatasetResults
 
@@ -510,10 +523,16 @@ func (wdb *WGSDB) Search(assembly string,
 			&variant.HGVSc,
 			&variant.HGVSp,
 			&variant.Consequence,
+			&variant.Exon,
 			&variant.Type,
-			&variant.GeneSymbol,
+			&variant.Gene,
+			&variant.Transcript,
+			&variant.Exons,
 			&dataset,
 			&variant.Sample,
+			&variant.NRefCount,
+			&variant.NAltCount,
+			&variant.NDepth,
 			&variant.TRefCount,
 			&variant.TAltCount,
 			&variant.TDepth,
@@ -533,9 +552,8 @@ func (wdb *WGSDB) Search(assembly string,
 		// we want to keep them separate for plotting purposes.
 		if currentVariant == nil || variant.Id != currentVariant.Id || variant.Sample != currentVariant.Sample {
 			currentVariant = &variant
-			results = append(results, currentVariant)
 			currentVariant.Datasets = make([]string, 0, 5)
-
+			results = append(results, currentVariant)
 		}
 
 		// if same variant, just add dataset to list
