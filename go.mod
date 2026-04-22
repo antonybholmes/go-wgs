@@ -1,6 +1,6 @@
 module github.com/antonybholmes/go-wgs
 
-go 1.25.0
+go 1.26
 
 replace github.com/antonybholmes/go-dna => ../go-dna
 
@@ -11,8 +11,8 @@ replace github.com/antonybholmes/go-sys => ../go-sys
 replace github.com/antonybholmes/go-web => ../go-web
 
 require (
-	github.com/antonybholmes/go-dna v0.0.0-20260403172902-c96bf99098ff
-	github.com/antonybholmes/go-sys v0.0.0-20260403172913-edaeb305202e
+	github.com/antonybholmes/go-dna v0.0.0-20260414211827-1ac7ff2467b6
+	github.com/antonybholmes/go-sys v0.0.0-20260414211834-526fb62c6da0
 	github.com/gin-gonic/gin v1.12.0
 )
 
@@ -49,11 +49,11 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
 	github.com/redis/go-redis/v9 v9.18.0 // indirect
-	github.com/rs/zerolog v1.35.0 // indirect
+	github.com/rs/zerolog v1.35.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	github.com/xyproto/randomstring v1.2.0 // indirect
-	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
+	go.mongodb.org/mongo-driver/v2 v2.5.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/arch v0.26.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
@@ -62,8 +62,8 @@ require (
 )
 
 require (
-	github.com/antonybholmes/go-basemath v0.0.0-20260313220641-74ea9151950a // indirect
-	github.com/antonybholmes/go-web v0.0.0-20260403172903-f845fdd34082
+	github.com/antonybholmes/go-basemath v0.0.0-20260414211833-d03296b3071e // indirect
+	github.com/antonybholmes/go-web v0.0.0-20260414211828-e0b24128d77c
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/matoous/go-nanoid/v2 v2.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
