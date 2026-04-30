@@ -11,18 +11,17 @@ replace github.com/antonybholmes/go-sys => ../go-sys
 replace github.com/antonybholmes/go-web => ../go-web
 
 require (
-	github.com/antonybholmes/go-dna v0.0.0-20260414211827-1ac7ff2467b6
-	github.com/antonybholmes/go-sys v0.0.0-20260414211834-526fb62c6da0
+	github.com/antonybholmes/go-dna v0.0.0-20260422134514-5ee6d6794d44
+	github.com/antonybholmes/go-sys v0.0.0-20260422134523-dadad00d6c60
 	github.com/gin-gonic/gin v1.12.0
 )
 
 require (
 	github.com/bytedance/gopkg v0.1.4 // indirect
-	github.com/bytedance/sonic v1.15.0 // indirect
+	github.com/bytedance/sonic v1.15.1 // indirect
 	github.com/bytedance/sonic/loader v0.5.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
-	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/gin-contrib/sessions v1.0.2 // indirect
 	github.com/gin-contrib/sse v1.1.1 // indirect
@@ -48,12 +47,12 @@ require (
 	github.com/pelletier/go-toml/v2 v2.3.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
-	github.com/redis/go-redis/v9 v9.18.0 // indirect
+	github.com/redis/go-redis/v9 v9.19.0 // indirect
 	github.com/rs/zerolog v1.35.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	github.com/xyproto/randomstring v1.2.0 // indirect
-	go.mongodb.org/mongo-driver/v2 v2.5.1 // indirect
+	go.mongodb.org/mongo-driver/v2 v2.6.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/arch v0.26.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
@@ -62,12 +61,12 @@ require (
 )
 
 require (
-	github.com/antonybholmes/go-basemath v0.0.0-20260414211833-d03296b3071e // indirect
-	github.com/antonybholmes/go-web v0.0.0-20260414211828-e0b24128d77c
+	github.com/antonybholmes/go-basemath v0.0.0-20260422134522-9e8f9f5650da // indirect
+	github.com/antonybholmes/go-web v0.0.0-20260422134515-67bdf56b3a29
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/matoous/go-nanoid/v2 v2.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-isatty v0.0.21 // indirect
+	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/richardlehane/mscfb v1.0.6 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
