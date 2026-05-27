@@ -8,6 +8,7 @@ import (
 
 	"github.com/antonybholmes/go-dna"
 	"github.com/antonybholmes/go-sys"
+	"github.com/antonybholmes/go-sys/db"
 	"github.com/antonybholmes/go-web"
 	"github.com/antonybholmes/go-web/auth/sqlite"
 	"github.com/antonybholmes/go-web/auth/token"
@@ -349,7 +350,7 @@ func (variant *Variant) Clone() *Variant {
 
 func NewWGSDB(file string) *WGSDB {
 
-	db := sys.Must(sql.Open(sys.Sqlite3DB, file+sys.SqliteDSN))
+	db := sys.Must(sql.Open(db.Sqlite3DB, file+db.SqliteDSN))
 
 	return &WGSDB{file: file, db: db}
 }
