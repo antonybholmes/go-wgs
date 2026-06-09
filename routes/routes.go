@@ -1,9 +1,13 @@
 package routes
 
 import (
+	"errors"
+
 	"github.com/antonybholmes/go-dna"
+	"github.com/antonybholmes/go-sys/log"
 	"github.com/antonybholmes/go-wgs/wgsdb"
 
+	"github.com/antonybholmes/go-genome"
 	"github.com/antonybholmes/go-web"
 	"github.com/antonybholmes/go-web/auth/token"
 	"github.com/antonybholmes/go-web/middleware"
@@ -61,6 +65,13 @@ func VariantDatasetsRoute(c *gin.Context) {
 	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *token.AuthUserJwtClaims) {
 		assembly := c.Param("assembly")
 
+		if assembly == "" {
+			web.BadReqResp(c, errors.New("assembly is required"))
+			return
+		}
+
+		assembly = genome.NormalizeAssembly(assembly)
+
 		datasets, err := wgsdb.Datasets(assembly, isAdmin, user.Permissions)
 
 		if err != nil {
@@ -82,12 +93,24 @@ func VariantsRoute(c *gin.Context) {
 
 func searchRoute(c *gin.Context, mode string) {
 	middleware.JwtUserWithPermissionsRoute(c, func(c *gin.Context, isAdmin bool, user *token.AuthUserJwtClaims) {
-		assembly := c.Query("assembly")
+
+		log.Debug().Msgf("search route called with mode %v", c.Params)
+
+		assembly := c.Param("assembly")
+
+		if assembly == "" {
+			web.BadReqResp(c, errors.New("assembly is required"))
+			return
+		}
+
+		assembly = genome.NormalizeAssembly(assembly)
+
+		log.Debug().Msgf("assembly %s", assembly)
 
 		params, err := ParseParamsFromPost(c)
 
 		if err != nil {
-			c.Error(err)
+			web.BadReqResp(c, err)
 			return
 		}
 
@@ -100,7 +123,7 @@ func searchRoute(c *gin.Context, mode string) {
 			user.Permissions)
 
 		if err != nil {
-			c.Error(err)
+			web.InternalErrorResp(c, err)
 			return
 		}
 
@@ -121,7 +144,7 @@ func searchRoute(c *gin.Context, mode string) {
 		pileup, err := wgs.GetPileup(location, params.Datasets, variants)
 
 		if err != nil {
-			c.Error(err)
+			web.InternalErrorResp(c, err)
 			return
 		}
 
@@ -136,7 +159,7 @@ func MAFRoute(c *gin.Context) {
 		params, err := ParseParamsFromPost(c)
 
 		if err != nil {
-			c.Error(err)
+			web.BadReqResp(c, err)
 			return
 		}
 
@@ -149,7 +172,7 @@ func MAFRoute(c *gin.Context) {
 			user)
 
 		if err != nil {
-			c.Error(err)
+			web.InternalErrorResp(c, err)
 			return
 		}
 
