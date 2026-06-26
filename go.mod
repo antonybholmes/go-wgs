@@ -62,7 +62,6 @@ require (
 )
 
 require (
-	github.com/antonybholmes/go-basemath v0.0.0-20260616152945-9dcd1ed04536 // indirect
 	github.com/antonybholmes/go-web v0.0.0-20260616152938-8bbbbc57a69d
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/matoous/go-nanoid/v2 v2.1.0 // indirect
