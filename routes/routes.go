@@ -72,7 +72,7 @@ func VariantDatasetsRoute(c *gin.Context) {
 
 		assembly = genome.NormalizeAssembly(assembly)
 
-		datasets, err := wgsdb.Datasets(assembly, isAdmin, user.Permissions)
+		datasets, err := wgsdb.Instance().Datasets(assembly, isAdmin, user.Permissions)
 
 		if err != nil {
 			c.Error(err)
@@ -116,7 +116,7 @@ func searchRoute(c *gin.Context, mode string) {
 
 		location := params.Locations[0]
 
-		variants, err := wgsdb.Search(assembly,
+		variants, err := wgsdb.Instance().Search(assembly,
 			location,
 			params.Datasets,
 			isAdmin,
@@ -165,7 +165,7 @@ func MAFRoute(c *gin.Context) {
 
 		location := params.Locations[0]
 
-		mafResults, err := wgsdb.MAF(assembly,
+		mafResults, err := wgsdb.Instance().MAF(assembly,
 			location,
 			params.Datasets,
 			isAdmin,
