@@ -1,6 +1,6 @@
 module github.com/antonybholmes/go-wgs
 
-go 1.27.1
+go 1.27.4
 
 replace github.com/antonybholmes/go-dna => ../go-dna
 
