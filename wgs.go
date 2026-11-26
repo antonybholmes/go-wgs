@@ -389,10 +389,18 @@ func (wdb *WGSDB) Datasets(assembly string, isAdmin bool, permissions []string) 
 		mapDatasetInfo[datasetId] = DatasetStats{Id: datasetId, Samples: samples, Variants: variants}
 	}
 
-	// here only datasets with permissions are collated
-	namedArgs := []any{sql.Named("assembly", web.FormatParam(assembly))}
+	assembly, err = web.FormatParam(assembly)
+	if err != nil {
+		return nil, err
+	}
 
-	query := sqlite.MakePermissionsSql(DatasetsSql, isAdmin, permissions, &namedArgs)
+	// here only datasets with permissions are collated
+	namedArgs := []any{sql.Named("assembly", assembly)}
+
+	query, err := sqlite.MakePermissionsSql(DatasetsSql, isAdmin, permissions, &namedArgs)
+	if err != nil {
+		return nil, err
+	}
 
 	rows, err = wdb.db.Query(query, namedArgs...)
 
@@ -468,7 +476,10 @@ func (wdb *WGSDB) Search(assembly string,
 		sql.Named("end", location.End()),
 		sql.Named("limit", MaxVariants)}
 
-	query := sqlite.MakePermissionsSql(FindVariantsSql, isAdmin, permissions, &namedArgs)
+	query, err := sqlite.MakePermissionsSql(FindVariantsSql, isAdmin, permissions, &namedArgs)
+	if err != nil {
+		return nil, err
+	}
 
 	query = MakeInDatasetsSql(query, datasetIds, &namedArgs)
 
@@ -569,6 +580,10 @@ func (wdb *WGSDB) Search(assembly string,
 
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return results, nil
 }
 
@@ -583,12 +598,18 @@ func (wdb *WGSDB) MAF(assembly string,
 
 	namedArgs := []any{}
 
-	query := sqlite.MakePermissionsSql(SampleCountSql, isAdmin, user.Permissions, &namedArgs)
+	query, err := sqlite.MakePermissionsSql(SampleCountSql, isAdmin, user.Permissions, &namedArgs)
+	if err != nil {
+		return nil, err
+	}
 
 	query = MakeInDatasetsSql(query, datasetIds, &namedArgs)
 
 	var samples int
-	err := wdb.db.QueryRow(query, namedArgs...).Scan(&samples)
+	err = wdb.db.QueryRow(query, namedArgs...).Scan(&samples)
+	if err != nil {
+		return nil, err
+	}
 
 	namedArgs = []any{
 		sql.Named("chr", location.Chr()),
@@ -596,7 +617,10 @@ func (wdb *WGSDB) MAF(assembly string,
 		sql.Named("end", location.End()),
 		sql.Named("limit", MaxVariants)}
 
-	query = sqlite.MakePermissionsSql(MAFSql, isAdmin, user.Permissions, &namedArgs)
+	query, err = sqlite.MakePermissionsSql(MAFSql, isAdmin, user.Permissions, &namedArgs)
+	if err != nil {
+		return nil, err
+	}
 
 	query = MakeInDatasetsSql(query, datasetIds, &namedArgs)
 
@@ -650,6 +674,10 @@ func (wdb *WGSDB) MAF(assembly string,
 			maf.Count += 1
 		}
 
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	results := MAFResults{Location: location, Datasets: datasetIds, Samples: samples, Alleles: 2 * samples, MAFs: mafs}
